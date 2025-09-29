@@ -425,34 +425,41 @@ Widget _buildWeekdayHeader() {
     return _OverviewSection(
       title: 'Free time',
       onShare: _shareFreeTime,
-      child: events.isEmpty
-          ? const _EmptyOverviewMessage(message: 'Free all day.')
-          : freeSlots.isEmpty
-              ? const _EmptyOverviewMessage(
-                  message: 'No free hours detected. Try adjusting your schedule.',
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: freeSlots
-                      .map(
-                        (slot) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Row(
-                            children: [
-                              Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                            ],
+      child: freeSlots.isEmpty
+          ? _buildFreeTimeEmptyMessage(events)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: freeSlots
+                  .map(
+                    (slot) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
                           ),
-                        ),
-                      )
-                      .toList(),
-                ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+    );
+  }
+
+  Widget _buildFreeTimeEmptyMessage(List<Event> events) {
+    if (events.isEmpty) {
+      return const _EmptyOverviewMessage(
+        message: 'Add time blocks to calculate your free time.',
+      );
+    }
+    return const _EmptyOverviewMessage(
+      message: 'No free time detected. Try adjusting your schedule.',
     );
   }
 
@@ -614,21 +621,12 @@ Widget _buildWeekdayHeader() {
   }
 
   void _shareFreeTime() {
-    final events = _getEventsForDate(_selectedDate);
+    final freeSlots = _calculateFreeTimeSlots(_getEventsForDate(_selectedDate));
     final formattedDate = DateFormat('EEEE, MMMM d').format(_selectedDate);
 
-    final summary = events.isEmpty
-        ? 'Free all day on $formattedDate.'
-        : () {
-            final freeSlots = _calculateFreeTimeSlots(events);
-            if (freeSlots.isEmpty) {
-              return 'No free hours available on $formattedDate.';
-            }
-            final slots = freeSlots
-                .map((slot) => '- ${_formatTime(slot.start)} to ${_formatTime(slot.end)}')
-                .join('\n');
-            return 'Free hours on $formattedDate:\n$slots';
-          }();
+    final summary = freeSlots.isEmpty
+        ? 'No free time available on $formattedDate.'
+        : 'Free time on $formattedDate:\n${freeSlots.map((slot) => '- ${_formatTime(slot.start)} to ${_formatTime(slot.end)}').join('\n')}';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(summary)),
@@ -675,13 +673,6 @@ Widget _buildWeekdayHeader() {
   }
 
   List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events) {
-    if (events.isEmpty) {
-      return [];
-    }
-
-    if (events.any((event) => !event.hasTimeRange)) {
-      return [];
-    }
 
     final dayStart = DateTime(
       _selectedDate.year,
@@ -698,16 +689,19 @@ Widget _buildWeekdayHeader() {
 
     final scheduled = events
         .where((event) => event.hasTimeRange)
-        .map((event) {
-          final start = _dateWithTime(_selectedDate, event.startTime!);
-          final end = _dateWithTime(_selectedDate, event.endTime!);
-          final clampedStart = start.isBefore(dayStart) ? dayStart : start;
-          final clampedEnd = end.isAfter(dayEnd) ? dayEnd : end;
-          return _TimeSlot(start: clampedStart, end: clampedEnd);
-        })
+        .map(
+          (event) => _TimeSlot(
+            start: _dateWithTime(_selectedDate, event.startTime!),
+            end: _dateWithTime(_selectedDate, event.endTime!),
+          ),
+        )
         .where((slot) => slot.end.isAfter(slot.start))
         .toList()
       ..sort((a, b) => a.start.compareTo(b.start));
+
+          if (scheduled.isEmpty) {
+      return [];
+    }
 
 
     final merged = <_TimeSlot>[];
@@ -717,33 +711,31 @@ Widget _buildWeekdayHeader() {
       } else {
         final last = merged.last;
         if (slot.start.isBefore(last.end)) {
-          final end = slot.end.isAfter(last.end) ? slot.end : last.end;
-          merged[merged.length - 1] = _TimeSlot(start: last.start, end: end);
+          merged[merged.length - 1] = _TimeSlot(
+            start: last.start,
+            end: slot.end.isAfter(last.end) ? slot.end : last.end,
+          );
         } else {
           merged.add(slot);
         }
       }
     }
 
-    final hourlySlots = <_TimeSlot>[];
-    for (var hour = _dayStartHour; hour < _dayEndHour; hour++) {
-      final hourStart = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        hour,
-      );
-      final hourEnd = hourStart.add(const Duration(hours: 1));
-      final overlapsBusy = merged.any(
-        (busy) => busy.start.isBefore(hourEnd) && busy.end.isAfter(hourStart),
-      );
-      if (!overlapsBusy) {
-        hourlySlots.add(_TimeSlot(start: hourStart, end: hourEnd));
+    final freeSlots = <_TimeSlot>[];
+    var cursor = dayStart;
+    for (final slot in merged) {
+      if (slot.start.isAfter(cursor)) {
+        freeSlots.add(_TimeSlot(start: cursor, end: slot.start));
+      }
+      if (slot.end.isAfter(cursor)) {
+        cursor = slot.end;
       }
     }
+    if (cursor.isBefore(dayEnd)) {
+      freeSlots.add(_TimeSlot(start: cursor, end: dayEnd));
+    }
 
-
-    return hourlySlots;
+    return freeSlots.where((slot) => slot.duration.inMinutes > 0).toList();
   }
 
   DateTime _dateWithTime(DateTime date, TimeOfDay time) {
