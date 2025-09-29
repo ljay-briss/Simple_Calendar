@@ -521,21 +521,17 @@ Widget _buildEventTile(Event event) {
                         text: '  •  $timeLabel',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.blueGrey[600]),
                       ),
-                      if (event.description.isNotEmpty) const TextSpan(text: '  •  '),
-                      if (event.description.isNotEmpty)
-                        TextSpan(text: event.description, style: const TextStyle(fontSize: 13)),
                     ]),
                     maxLines: 1,
                     softWrap: false,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: categoryColor.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
-                  child: Text(
-                    event.category,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: categoryColor.withOpacity(0.9)),
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: categoryColor.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ],
@@ -1227,7 +1223,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
               initialTime: _start ?? const TimeOfDay(hour: 9, minute: 0),
             );
             if (!mounted) return; 
-            
+
             if (t != null) {
               setState(() {
                 _start = t;
