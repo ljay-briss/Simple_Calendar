@@ -116,10 +116,8 @@ Future<void> _showEditEventDialog(Event oldEvent) async {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-           _buildIconButton(Icons.search, () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Search coming soon!')),
-            );
+          _buildIconButton(Icons.search, () {
+            _showEventSearch();
           }),
           const Spacer(),
           const Text(
@@ -138,6 +136,38 @@ Future<void> _showEditEventDialog(Event oldEvent) async {
         ],
       ),
     );
+  }
+
+  Future<void> _showEventSearch() async {
+    if (_events.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add an event to search.')),
+      );
+      return;
+    }
+
+    final selectedEvent = await showSearch<Event?>(
+      context: context,
+      delegate: EventSearchDelegate(events: List<Event>.from(_events)),
+    );
+
+    if (selectedEvent != null) {
+      setState(() {
+        _selectedDate = DateTime(
+          selectedEvent.date.year,
+          selectedEvent.date.month,
+          selectedEvent.date.day,
+        );
+        _currentMonth = DateTime(
+          selectedEvent.date.year,
+          selectedEvent.date.month,
+        );
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Showing results for "${selectedEvent.title}"')),
+      );
+    }
   }
 
   Widget _buildIconButton(IconData icon, VoidCallback onPressed) {
@@ -1344,4 +1374,145 @@ class _EditEventDialogState extends State<EditEventDialog> {
       ]),
     ),
   );
+}
+
+class EventSearchDelegate extends SearchDelegate<Event?> {
+  EventSearchDelegate({required List<Event> events})
+      : _events = List<Event>.from(events);
+
+  final List<Event> _events;
+
+  List<Event> get _sortedEvents {
+    final copy = List<Event>.from(_events);
+    copy.sort((a, b) {
+      final dateCompare = a.date.compareTo(b.date);
+      if (dateCompare != 0) {
+        return dateCompare;
+      }
+      final aStart = a.startTime != null
+          ? a.startTime!.hour * 60 + a.startTime!.minute
+          : -1;
+      final bStart = b.startTime != null
+          ? b.startTime!.hour * 60 + b.startTime!.minute
+          : -1;
+      return aStart.compareTo(bStart);
+    });
+    return copy;
+  }
+
+  List<Event> _filterEvents(String query) {
+    final lower = query.toLowerCase();
+    return _sortedEvents
+        .where(
+          (event) => event.title.toLowerCase().contains(lower) ||
+              event.description.toLowerCase().contains(lower) ||
+              event.category.toLowerCase().contains(lower),
+        )
+        .toList();
+  }
+
+  @override
+  String get searchFieldLabel => 'Search events';
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    if (query.isEmpty) {
+      return null;
+    }
+    return [
+      IconButton(
+        onPressed: () => query = '',
+        icon: const Icon(Icons.clear),
+      ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    final results = query.isEmpty ? _sortedEvents : _filterEvents(query);
+    return _buildEventList(context, results);
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    final suggestions = query.isEmpty ? _sortedEvents : _filterEvents(query);
+    return _buildEventList(context, suggestions);
+  }
+
+  Widget _buildEventList(BuildContext context, List<Event> events) {
+    if (events.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.search_off, size: 48, color: Colors.blueGrey),
+            SizedBox(height: 12),
+            Text(
+              'No matching events',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Try searching by title, description, or category.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      itemBuilder: (context, index) {
+        final event = events[index];
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Colors.blue[600],
+            foregroundColor: Colors.white,
+            child:
+                Text(event.title.isNotEmpty ? event.title[0].toUpperCase() : '?'),
+          ),
+          title: Text(event.title),
+          subtitle: Text(_formatSubtitle(event)),
+          onTap: () => close(context, event),
+        );
+      },
+      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, endIndent: 16),
+      itemCount: events.length,
+    );
+  }
+
+  String _formatSubtitle(Event event) {
+    final dateLabel = DateFormat('MMM d, yyyy').format(event.date);
+
+    if (event.hasTimeRange) {
+      final start = DateTime(
+        event.date.year,
+        event.date.month,
+        event.date.day,
+        event.startTime!.hour,
+        event.startTime!.minute,
+      );
+      final end = DateTime(
+        event.date.year,
+        event.date.month,
+        event.date.day,
+        event.endTime!.hour,
+        event.endTime!.minute,
+      );
+      final timeRange =
+          '${DateFormat('h:mm a').format(start)} - ${DateFormat('h:mm a').format(end)}';
+      return '$dateLabel · $timeRange · ${event.category}';
+    }
+
+    return '$dateLabel · All day · ${event.category}';
+  }
 }
