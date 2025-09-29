@@ -58,7 +58,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const int _dayStartHour = 8;
   static const int _dayEndHour = 20;
 
-// This
   @override
   Widget build(BuildContext context) {
     final eventsForSelectedDate = _getEventsForDate(_selectedDate);
@@ -94,6 +93,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
+
+Future<void> _showEditEventDialog(Event oldEvent) async {
+  final edited = await showDialog<Event>(
+    context: context,
+    builder: (_) => EditEventDialog(initial: oldEvent),
+  );
+  if (edited != null) {
+    setState(() {
+      final i = _events.indexOf(oldEvent);
+      if (i != -1) _events[i] = edited;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Event updated!')),
+    );
+  }
+}
+
 
   Widget _buildTopBar() {
     return Padding(
@@ -452,6 +468,7 @@ Widget _buildWeekdayHeader() {
     );
   }
 
+
   Widget _buildFreeTimeEmptyMessage(List<Event> events) {
     if (events.isEmpty) {
       return const _EmptyOverviewMessage(
@@ -463,97 +480,62 @@ Widget _buildWeekdayHeader() {
     );
   }
 
-  Widget _buildEventTile(Event event) {
-    final categoryColor = _getCategoryColor(event.category);
-    return Container(
+Widget _buildEventTile(Event event) {
+  final categoryColor = _getCategoryColor(event.category);
+  final timeLabel = event.hasTimeRange
+      ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
+      : 'All day';
+
+  return InkWell(
+    borderRadius: BorderRadius.circular(16),
+    onTap: () => _showEditEventDialog(event), // <— tap to edit
+    child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.blueGrey[50]!),
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: Offset(0,4))],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-                Text(
-                  event.title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  event.hasTimeRange
-                      ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
-                      : 'All day',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.blueGrey[500],
-                  ),
-                ),
-          Container(
-            width: 12,
-            height: 12,
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: categoryColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 12),
+          Container(width: 12, height: 12, margin: const EdgeInsets.only(top: 4, right: 12),
+            decoration: BoxDecoration(color: categoryColor, shape: BoxShape.circle)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  event.title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+                // One horizontal line that shrinks instead of overflowing
+                FittedBox(
+                  alignment: Alignment.centerLeft,
+                  fit: BoxFit.scaleDown,
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: event.title,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      TextSpan(
+                        text: '  •  $timeLabel',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.blueGrey[600]),
+                      ),
+                      if (event.description.isNotEmpty) const TextSpan(text: '  •  '),
+                      if (event.description.isNotEmpty)
+                        TextSpan(text: event.description, style: const TextStyle(fontSize: 13)),
+                    ]),
+                    maxLines: 1,
+                    softWrap: false,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  event.hasTimeRange
-                      ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
-                      : 'All day',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.blueGrey[500],
-                  ),
-                ),
-                if (event.description.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    event.description,
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ],
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: categoryColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+                  decoration: BoxDecoration(color: categoryColor.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
                   child: Text(
                     event.category,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: categoryColor.withOpacity(0.9),
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: categoryColor.withOpacity(0.9)),
                   ),
                 ),
               ],
@@ -562,11 +544,16 @@ Widget _buildWeekdayHeader() {
           IconButton(
             onPressed: () => _confirmDelete(event),
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            constraints: const BoxConstraints(),
+            padding: EdgeInsets.zero,
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
+
+
 
   Widget _buildBottomNavigationBar() {
     return BottomAppBar(
@@ -1041,7 +1028,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
       actions: [
         TextButton(
           onPressed: _saveEvent,
-          style: ElevatedButton.styleFrom(
+  style: TextButton.styleFrom(
             backgroundColor: Colors.blue[600],
             foregroundColor: Colors.white,
           ),
@@ -1094,6 +1081,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
       context: context,
       initialTime: initialTime,
     );
+    if (!mounted) return; 
+
     if (selected != null) {
       setState(() {
         if (isStart) {
@@ -1154,4 +1143,184 @@ class _AddEventDialogState extends State<AddEventDialog> {
     _descriptionController.dispose();
     super.dispose();
   }
+}
+
+class EditEventDialog extends StatefulWidget {
+  const EditEventDialog({required this.initial, super.key});
+  final Event initial;
+
+  @override
+  State<EditEventDialog> createState() => _EditEventDialogState();
+}
+
+class _EditEventDialogState extends State<EditEventDialog> {
+  late TextEditingController _title;
+  late TextEditingController _desc;
+  late String _category;
+  TimeOfDay? _start;
+  TimeOfDay? _end;
+
+  @override
+  void initState() {
+    super.initState();
+    final init = widget.initial;
+    _title = TextEditingController(text: init.title);
+    _desc  = TextEditingController(text: init.description);
+    _category = init.category;
+    _start = init.startTime;
+    _end   = init.endTime;
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final formattedDate = DateFormat('EEEE, MMMM d').format(widget.initial.date);
+
+    return AlertDialog(
+      title: const Text('Edit Event'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(
+              labelText: 'Event Title *',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.title),
+            ),
+            autofocus: true,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _desc,
+            decoration: const InputDecoration(
+              labelText: 'Description (Optional)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.description_outlined),
+            ),
+            minLines: 1,
+            maxLines: 3,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _category,
+            decoration: const InputDecoration(
+              labelText: 'Category',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.category_outlined),
+            ),
+            items: const [
+              'General','Work','Personal','Health','Education','Travel','Entertainment'
+            ].map((c)=>DropdownMenuItem(value:c, child: Text(c))).toList(),
+            onChanged: (v)=>setState(()=>_category = v ?? 'General'),
+          ),
+          const SizedBox(height: 16),
+          _timeTile('Start time', _start, () async {
+            final t = await showTimePicker(
+              context: context,
+              initialTime: _start ?? const TimeOfDay(hour: 9, minute: 0),
+            );
+            if (!mounted) return; 
+            
+            if (t != null) {
+              setState(() {
+                _start = t;
+                if (_end != null && !_isEndAfterStart(_end!, t)) _end = null;
+              });
+            }
+          }),
+          const SizedBox(height: 12),
+          _timeTile('End time', _end, () async {
+            final t = await showTimePicker(
+              context: context,
+              initialTime: _end ?? const TimeOfDay(hour: 10, minute: 0),
+            );
+            if (t != null) {
+              if (_start != null && !_isEndAfterStart(t, _start!)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('End time must be after the start time.')),
+                );
+                return;
+              }
+              setState(()=>_end = t);
+            }
+          }),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              const Icon(Icons.calendar_today_outlined, color: Colors.blue),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Date: $formattedDate', style: const TextStyle(fontWeight: FontWeight.w600))),
+            ]),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: ()=>Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () {
+            if (_title.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please enter an event title.')),
+              );
+              return;
+            }
+            Navigator.pop(context, Event(
+              title: _title.text.trim(),
+              description: _desc.text.trim(),
+              date: widget.initial.date,
+              startTime: _start,
+              endTime: _end,
+              category: _category,
+            ));
+          },
+          style: TextButton.styleFrom(
+            backgroundColor: Colors.blue[600],
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  // helpers
+  bool _isEndAfterStart(TimeOfDay end, TimeOfDay start) {
+    final e = end.hour * 60 + end.minute;
+    final s = start.hour * 60 + start.minute;
+    return e > s;
+  }
+
+  Widget _timeTile(String label, TimeOfDay? time, VoidCallback onTap) => InkWell(
+    onTap: onTap, borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blueGrey[100]!),
+      ),
+      child: Row(children: [
+        Icon(Icons.schedule_outlined, color: Colors.blueGrey[400]),
+        const SizedBox(width: 12),
+        Expanded(child: Text(
+          time == null ? 'Select $label' : time.format(context),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: time == null ? Colors.blueGrey[300] : Colors.blueGrey[700],
+          ),
+        )),
+        Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
+      ]),
+    ),
+  );
 }
