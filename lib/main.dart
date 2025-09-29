@@ -1636,7 +1636,7 @@ _DateQuery? _parseDateQueryLoose(String input) {
   }
 
   // 3) Numeric no-year like "9/29" or "09-29" (assume current year)
-  final md = RegExp(r'^(\d{1,2})[/-\.](\d{1,2})$');
+  final md = RegExp(r'^(\d{1,2})[-/\.](\d{1,2})$');
   final mdM = md.firstMatch(q);
   if (mdM != null) {
     final now = DateTime.now();
