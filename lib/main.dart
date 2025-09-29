@@ -1376,11 +1376,52 @@ class _EditEventDialogState extends State<EditEventDialog> {
   );
 }
 
+  class _DateQuery {
+  final int? year, month, day;
+  const _DateQuery({this.year, this.month, this.day});
+  bool matches(DateTime d) {
+    if (year  != null && d.year  != year)  return false;
+    if (month != null && d.month != month) return false;
+    if (day   != null && d.day   != day)   return false;
+    return true;
+  }
+}
+
 class EventSearchDelegate extends SearchDelegate<Event?> {
   EventSearchDelegate({required List<Event> events})
       : _events = List<Event>.from(events);
 
   final List<Event> _events;
+
+DateTime? _initialDateFromQuery(String q) {
+  final dq = _parseDateQueryLoose(q);
+  if (dq == null) return null;
+
+  // Choose a concrete date for the picker:
+  final now = DateTime.now();
+  final year  = dq.year  ?? now.year;
+  final month = dq.month ?? 1;
+  final day   = dq.day   ?? 1;
+
+  // Clamp to a valid date just in case
+  final dt = _safeDate(year, month, day);
+  return dt ?? DateTime(year, month, 1);
+}
+
+DateTime? _safeDate(int year, int month, int day) {
+  if (month < 1 || month > 12) return null;
+  try {
+    final d = DateTime(year, month, day);
+    if (d.year == year && d.month == month && d.day == day) {
+      return d;
+    }
+  } catch (_) {
+    // invalid date like Feb 30
+  }
+  return null;
+}
+
+
 
   List<Event> get _sortedEvents {
     final copy = List<Event>.from(_events);
@@ -1400,32 +1441,76 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
     return copy;
   }
 
-  List<Event> _filterEvents(String query) {
-    final lower = query.toLowerCase();
-    return _sortedEvents
-        .where(
-          (event) => event.title.toLowerCase().contains(lower) ||
-              event.description.toLowerCase().contains(lower) ||
-              event.category.toLowerCase().contains(lower),
-        )
-        .toList();
+List<Event> _filterEvents(String query) {
+  final trimmed = query.trim();
+  if (trimmed.isEmpty) return _sortedEvents;
+
+  final dq = _parseDateQueryLoose(trimmed); // NEW
+  final lower = trimmed.toLowerCase();
+
+  final seen = <Event>{};
+  final dateMatches = <Event>[];
+  final keywordMatches = <Event>[];
+
+  for (final e in _sortedEvents) {
+    final mDate = dq != null && dq.matches(e.date);
+    final mKw = e.title.toLowerCase().contains(lower) ||
+        e.description.toLowerCase().contains(lower) ||
+        e.category.toLowerCase().contains(lower);
+
+    if (mDate && seen.add(e)) dateMatches.add(e);
+    if (mKw   && seen.add(e)) keywordMatches.add(e);
   }
+
+  // If the query looks like a date (even partial), prioritize date matches
+  if (dq != null && dateMatches.isNotEmpty) {
+    return [...dateMatches, ...keywordMatches];
+  }
+  return keywordMatches.isNotEmpty ? keywordMatches : dateMatches;
+}
+
 
   @override
   String get searchFieldLabel => 'Search events';
 
-  @override
-  List<Widget>? buildActions(BuildContext context) {
-    if (query.isEmpty) {
-      return null;
-    }
-    return [
+@override
+List<Widget>? buildActions(BuildContext context) {
+  return [
+    IconButton(
+      tooltip: 'Pick a date',
+      icon: const Icon(Icons.calendar_today),
+      onPressed: () async {
+        final now = DateTime.now();
+        final firstDate = DateTime(now.year - 5);
+        final lastDate  = DateTime(now.year + 5);
+
+        final guessed = _initialDateFromQuery(query) ?? now;
+        final initialDate = guessed.isBefore(firstDate)
+            ? firstDate
+            : guessed.isAfter(lastDate)
+                ? lastDate
+                : guessed;
+
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: initialDate,
+          firstDate: firstDate,
+          lastDate: lastDate,
+        );
+        if (picked != null) {
+          query = DateFormat('yyyy-MM-dd').format(picked);
+          showSuggestions(context);
+        }
+      },
+    ),
+    if (query.isNotEmpty)
       IconButton(
         onPressed: () => query = '',
         icon: const Icon(Icons.clear),
       ),
-    ];
-  }
+  ];
+}
+
 
   @override
   Widget? buildLeading(BuildContext context) {
@@ -1515,4 +1600,121 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
 
     return '$dateLabel · All day · ${event.category}';
   }
+
+DateTime _todayBase() {
+  final n = DateTime.now();
+  return DateTime(n.year, n.month, n.day);
+}
+
+_DateQuery? _parseDateQueryLoose(String input) {
+  var q = input.trim().toLowerCase();
+
+  // 1) Special words with prefix support
+  const words = {
+    'today': 0,
+    'tomorrow': 1,
+    'yesterday': -1,
+  };
+  final specials = words.keys.where((w) => w.startsWith(q)).toList();
+  if (specials.length == 1) {
+    final delta = words[specials.first]!;
+    final base = _todayBase().add(Duration(days: delta));
+    return _DateQuery(year: base.year, month: base.month, day: base.day);
+  }
+
+  // 2) Year-month[-day] like "2025", "2025-09", "2025/9/2" (partial allowed)
+  final ymd = RegExp(r'^(\d{4})(?:[-/\.](\d{1,2})(?:[-/\.](\d{1,2}))?)?$');
+  final ymdM = ymd.firstMatch(q);
+  if (ymdM != null) {
+    final y = int.parse(ymdM.group(1)!);
+    final m = ymdM.group(2) != null ? int.parse(ymdM.group(2)!) : null;
+    final d = ymdM.group(3) != null ? int.parse(ymdM.group(3)!) : null;
+    if (m == null) return _DateQuery(year: y);                  // year only
+    if (d == null) return _DateQuery(year: y, month: m);        // year-month
+    final ok = _safeDate(y, m, d) != null;
+    return ok ? _DateQuery(year: y, month: m, day: d) : null;   // full date
+  }
+
+  // 3) Numeric no-year like "9/29" or "09-29" (assume current year)
+  final md = RegExp(r'^(\d{1,2})[/-\.](\d{1,2})$');
+  final mdM = md.firstMatch(q);
+  if (mdM != null) {
+    final now = DateTime.now();
+    final a = int.parse(mdM.group(1)!);
+    final b = int.parse(mdM.group(2)!);
+    // Try MM/DD first, then DD/MM
+    if (_safeDate(now.year, a, b) != null) return _DateQuery(year: now.year, month: a, day: b);
+    if (_safeDate(now.year, b, a) != null) return _DateQuery(year: now.year, month: b, day: a);
+  }
+
+  // 4) Month-name (prefix) forms like "sep", "sept 2", "september 2025", "2 sep 2025"
+  final tokens = q.split(RegExp(r'[\s,.-]+')).where((t) => t.isNotEmpty).toList();
+  if (tokens.isNotEmpty) {
+    final monthMap = <String, int>{
+      'january':1,'jan':1,
+      'february':2,'feb':2,
+      'march':3,'mar':3,
+      'april':4,'apr':4,
+      'may':5,
+      'june':6,'jun':6,
+      'july':7,'jul':7,
+      'august':8,'aug':8,
+      'september':9,'sep':9,'sept':9,
+      'october':10,'oct':10,
+      'november':11,'nov':11,
+      'december':12,'dec':12,
+    };
+
+    int? pickMonthPrefix(String t) {
+      final hits = monthMap.entries.where((e) => e.key.startsWith(t)).map((e) => e.value).toSet().toList();
+      return hits.length == 1 ? hits.first : null; // only if unambiguous
+    }
+
+    final now = DateTime.now();
+
+    // Try patterns:
+    //  a) "<monPrefix>"          -> month of current year
+    //  b) "<monPrefix> <day>"    -> specific day this year
+    //  c) "<monPrefix> <year>"   -> any day in that month (month match)
+    //  d) "<day> <monPrefix> [year]" -> specific day
+    //  e) "<monPrefix> <day> <year>" -> specific day
+    if (tokens.length == 1) {
+      final m = pickMonthPrefix(tokens[0]);
+      if (m != null) return _DateQuery(year: now.year, month: m); // month-only
+    } else if (tokens.length == 2) {
+      final mA = pickMonthPrefix(tokens[0]);
+      final mB = pickMonthPrefix(tokens[1]);
+      if (mA != null && RegExp(r'^\d{1,2}$').hasMatch(tokens[1])) {
+        final d = int.parse(tokens[1]);
+        if (_safeDate(now.year, mA, d) != null) return _DateQuery(year: now.year, month: mA, day: d);
+      }
+      if (mA != null && RegExp(r'^\d{4}$').hasMatch(tokens[1])) {
+        final y = int.parse(tokens[1]);
+        return _DateQuery(year: y, month: mA); // year-month
+      }
+      if (RegExp(r'^\d{1,2}$').hasMatch(tokens[0]) && mB != null) {
+        final d = int.parse(tokens[0]);
+        if (_safeDate(now.year, mB, d) != null) return _DateQuery(year: now.year, month: mB, day: d);
+      }
+    } else if (tokens.length >= 3) {
+      // e.g., "sep 2 2025", "2 sep 2025"
+      int? day, month, year;
+      for (final t in tokens) {
+        if (month == null) month = pickMonthPrefix(t);
+      }
+      for (final t in tokens) {
+        if (year == null && RegExp(r'^\d{4}$').hasMatch(t)) year = int.parse(t);
+      }
+      for (final t in tokens) {
+        if (day == null && RegExp(r'^\d{1,2}$').hasMatch(t)) day = int.parse(t);
+      }
+      year ??= now.year;
+      if (month != null && day != null && _safeDate(year, month!, day!) != null) {
+        return _DateQuery(year: year, month: month, day: day);
+      }
+    }
+  }
+
+  return null; // not a date-like query
+}
 }
