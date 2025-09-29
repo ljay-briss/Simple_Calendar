@@ -438,35 +438,49 @@ Widget _buildWeekdayHeader() {
   }
 
   Widget _buildFreeTimeOverview(List<_TimeSlot> freeSlots, List<Event> events) {
-    return _OverviewSection(
-      title: 'Free time',
-      onShare: _shareFreeTime,
-      child: freeSlots.isEmpty
-          ? _buildFreeTimeEmptyMessage(events)
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: freeSlots
-                  .map(
-                    (slot) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        children: [
-                          Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
+  return _OverviewSection(
+    title: 'Free time',
+    onShare: _shareFreeTime,
+    child: events.isEmpty
+        // No events → say "Free all day"
+        ? Row(
+            children: [
+              Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
+              const SizedBox(width: 8),
+              const Text(
+                'Free all day',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          )
+        // Has events → show calculated free slots (or the existing empty message)
+        : (freeSlots.isEmpty
+            ? const _EmptyOverviewMessage(
+                message: 'No free time detected. Try adjusting your schedule.',
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: freeSlots.map((slot) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  )
-                  .toList(),
-            ),
-    );
-  }
+                  );
+                }).toList(),
+              )),
+  );
+}
+
 
 
   Widget _buildFreeTimeEmptyMessage(List<Event> events) {
@@ -488,7 +502,7 @@ Widget _buildEventTile(Event event) {
 
   return InkWell(
     borderRadius: BorderRadius.circular(16),
-    onTap: () => _showEditEventDialog(event), // <— tap to edit
+    onTap: () => _showEditEventDialog(event),
     child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -496,58 +510,60 @@ Widget _buildEventTile(Event event) {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.blueGrey[50]!),
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: Offset(0,4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0,4),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(width: 12, height: 12, margin: const EdgeInsets.only(top: 4, right: 12),
-            decoration: BoxDecoration(color: categoryColor, shape: BoxShape.circle)),
+          // colored dot only
+          Container(
+            width: 12,
+            height: 12,
+            margin: const EdgeInsets.only(top: 4, right: 12),
+            decoration: BoxDecoration(color: categoryColor, shape: BoxShape.circle),
+          ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // One horizontal line that shrinks instead of overflowing
-                FittedBox(
-                  alignment: Alignment.centerLeft,
-                  fit: BoxFit.scaleDown,
-                  child: Text.rich(
-                    TextSpan(children: [
-                      TextSpan(
-                        text: event.title,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
-                      TextSpan(
-                        text: '  •  $timeLabel',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.blueGrey[600]),
-                      ),
-                    ]),
-                    maxLines: 1,
-                    softWrap: false,
+            child: FittedBox(
+              alignment: Alignment.centerLeft,
+              fit: BoxFit.scaleDown,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event.title,
+                    style: const TextStyle(
+                      fontSize: 25,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: categoryColor.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(2),
+                  Text(
+                    timeLabel,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey[600],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          IconButton(
-            onPressed: () => _confirmDelete(event),
-            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            constraints: const BoxConstraints(),
-            padding: EdgeInsets.zero,
-          ),
+          // IconButton removed to give more space
         ],
       ),
     ),
   );
 }
+
+
+
+
 
 
 
