@@ -438,48 +438,54 @@ Widget _buildWeekdayHeader() {
   }
 
   Widget _buildFreeTimeOverview(List<_TimeSlot> freeSlots, List<Event> events) {
-  return _OverviewSection(
-    title: 'Free time',
-    onShare: _shareFreeTime,
-    child: events.isEmpty
-        // No events → say "Free all day"
-        ? Row(
-            children: [
-              Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
-              const SizedBox(width: 8),
-              const Text(
-                'Free all day',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
-          )
-        // Has events → show calculated free slots (or the existing empty message)
-        : (freeSlots.isEmpty
-            ? const _EmptyOverviewMessage(
-                message: 'No free time detected. Try adjusting your schedule.',
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: freeSlots.map((slot) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(
-                      children: [
-                        Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+    final hasAllDayEvent = events.any((event) => !event.hasTimeRange);
+
+    return _OverviewSection(
+      title: 'Free time',
+      onShare: _shareFreeTime,
+      child: events.isEmpty
+          // No events → say "Free all day"
+          ? Row(
+              children: [
+                Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
+                const SizedBox(width: 8),
+                const Text(
+                  'Free all day',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            )
+          : hasAllDayEvent
+              ? const _EmptyOverviewMessage(
+                  message: 'No Free Time',
+                )
+              // Has events → show calculated free slots (or the existing empty message)
+              : (freeSlots.isEmpty
+                  ? const _EmptyOverviewMessage(
+                      message: 'No free time detected. Try adjusting your schedule.',
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: freeSlots.map((slot) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              )),
-  );
-}
+                        );
+                      }).toList(),
+                    )),
+    );
+  }
 
 
 
@@ -672,6 +678,9 @@ Widget _buildEventTile(Event event) {
   }
 
   List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events) {
+    if (events.any((event) => !event.hasTimeRange)) {
+      return [];
+    }
 
     final dayStart = DateTime(
       _selectedDate.year,
@@ -698,7 +707,7 @@ Widget _buildEventTile(Event event) {
         .toList()
       ..sort((a, b) => a.start.compareTo(b.start));
 
-          if (scheduled.isEmpty) {
+    if (scheduled.isEmpty) {
       return [];
     }
 
