@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 
 void main() {
   runApp(const CalendarApp());
@@ -40,6 +45,56 @@ class Event {
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
+
+    Map<String, dynamic> toMap() {
+    return {
+      'title': title,
+      'description': description,
+      'date': date.toIso8601String(),
+      'startTime': startTime != null ? _timeOfDayToMap(startTime!) : null,
+      'endTime': endTime != null ? _timeOfDayToMap(endTime!) : null,
+      'category': category,
+    };
+  }
+
+  factory Event.fromMap(Map<String, dynamic> map) {
+    final dateString = map['date'] as String?;
+    DateTime parsedDate;
+    try {
+      parsedDate = dateString != null ? DateTime.parse(dateString) : DateTime.now();
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
+
+    return Event(
+      title: (map['title'] as String?) ?? '',
+      description: (map['description'] as String?) ?? '',
+      date: parsedDate,
+      startTime: _timeOfDayFromMap(map['startTime']),
+      endTime: _timeOfDayFromMap(map['endTime']),
+      category: (map['category'] as String?) ?? 'General',
+    );
+  }
+
+  static Map<String, int> _timeOfDayToMap(TimeOfDay time) {
+    return {'hour': time.hour, 'minute': time.minute};
+  }
+
+  static TimeOfDay? _timeOfDayFromMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      final hourValue = data['hour'];
+      final minuteValue = data['minute'];
+
+      if (hourValue is num && minuteValue is num) {
+        final hour = hourValue.toInt();
+        final minute = minuteValue.toInt();
+        if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+          return TimeOfDay(hour: hour, minute: minute);
+        }
+      }
+    }
+    return null;
+  }
 }
 
 class CalendarScreen extends StatefulWidget {
@@ -55,8 +110,67 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final List<Event> _events = [];
   bool _showIntroCard = true;
 
+  SharedPreferences? _cachedPrefs;
+  static const String _eventsStorageKey = 'calendar_events';
+  static const String _introCardStorageKey = 'calendar_intro_card';
+
   static const int _dayStartHour = 8;
   static const int _dayEndHour = 20;
+
+    @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPersistedState());
+  }
+
+  Future<SharedPreferences> _getPrefs() async {
+    return _cachedPrefs ??= await SharedPreferences.getInstance();
+  }
+
+  Future<void> _loadPersistedState() async {
+    final prefs = await _getPrefs();
+    final storedEvents = prefs.getStringList(_eventsStorageKey) ?? [];
+    final loadedEvents = <Event>[];
+
+    for (final jsonString in storedEvents) {
+      try {
+        final decoded = jsonDecode(jsonString);
+        if (decoded is Map<String, dynamic>) {
+          loadedEvents.add(Event.fromMap(decoded));
+        }
+      } catch (_) {
+        // Ignore malformed entries.
+      }
+    }
+
+    final showIntroPref = prefs.getBool(_introCardStorageKey);
+
+    if (!mounted) return;
+    setState(() {
+      _events
+        ..clear()
+        ..addAll(loadedEvents);
+      _showIntroCard = showIntroPref ?? _events.isEmpty;
+    });
+  }
+
+  Future<void> _persistEvents() async {
+    final prefs = await _getPrefs();
+    final encoded = _events.map((event) => jsonEncode(event.toMap())).toList();
+    await prefs.setStringList(_eventsStorageKey, encoded);
+  }
+
+  Future<void> _persistIntroCard(bool value) async {
+    final prefs = await _getPrefs();
+    await prefs.setBool(_introCardStorageKey, value);
+  }
+
+  void _handleEventAdded(Event event) {
+    setState(() {
+      _events.add(event);
+    });
+    unawaited(_persistEvents());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,21 +208,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-Future<void> _showEditEventDialog(Event oldEvent) async {
-  final edited = await showDialog<Event>(
-    context: context,
-    builder: (_) => EditEventDialog(initial: oldEvent),
-  );
-  if (edited != null) {
-    setState(() {
-      final i = _events.indexOf(oldEvent);
-      if (i != -1) _events[i] = edited;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Event updated!')),
+  Future<void> _showEditEventDialog(Event oldEvent) async {
+    final edited = await showDialog<Event>(
+      context: context,
+      builder: (_) => EditEventDialog(initial: oldEvent),
     );
+    if (edited != null) {
+      setState(() {
+        final i = _events.indexOf(oldEvent);
+        if (i != -1) _events[i] = edited;
+      });
+      unawaited(_persistEvents());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Event updated!')),
+      );
+    }
   }
-}
 
 
   Widget _buildTopBar() {
@@ -295,6 +410,7 @@ Future<void> _showEditEventDialog(Event oldEvent) async {
                       setState(() {
                         _showIntroCard = false;
                       });
+                      unawaited(_persistIntroCard(false));
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[600],
@@ -806,9 +922,7 @@ Widget _buildEventTile(Event event) {
       builder: (context) => AddEventDialog(
         selectedDate: _selectedDate,
         onEventAdded: (event) {
-          setState(() {
-            _events.add(event);
-          });
+          _handleEventAdded(event);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Event added successfully!')),
           );
@@ -833,9 +947,10 @@ Widget _buildEventTile(Event event) {
               setState(() {
                 _events.remove(event);
               });
+              unawaited(_persistEvents());
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Event deleted')), 
+                const SnackBar(content: Text('Event deleted')),
               );
             },
             child: const Text(
