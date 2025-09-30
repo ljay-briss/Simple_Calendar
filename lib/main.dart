@@ -159,7 +159,7 @@ class Event {
     return {'hour': time.hour, 'minute': time.minute};
   }
 
-    static Duration? _durationFromMinutes(dynamic minutes) {
+  static Duration? _durationFromMinutes(dynamic minutes) {
     if (minutes == null) return null;
     if (minutes is num) {
       return Duration(minutes: minutes.round());
@@ -220,7 +220,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const int _dayStartHour = 8;
   static const int _dayEndHour = 20;
 
-    @override
+  @override
   void initState() {
     super.initState();
     unawaited(_loadPersistedState());
@@ -533,7 +533,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-Widget _buildWeekdayHeader() {
+  Widget _buildWeekdayHeader() {
     const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return Row(
       children: weekdays
@@ -749,7 +749,7 @@ Widget _buildWeekdayHeader() {
     );
   }
 
-Widget _buildEventTile(Event event) {
+  Widget _buildEventTile(Event event) {
   final categoryColor = _getCategoryColor(event.category);
   final timeLabel = event.hasTimeRange
       ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
@@ -859,7 +859,7 @@ Widget _buildEventTile(Event event) {
 }
 
 
-Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
+  Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
@@ -939,7 +939,7 @@ Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
     );
   }
 
-    String _buildShareLine(Event event) {
+  String _buildShareLine(Event event) {
     final timeSegment = event.hasTimeRange
         ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
         : 'All day';
@@ -1140,7 +1140,8 @@ Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
             child: const Text(
               'Delete',
               style: TextStyle(color: Colors.redAccent),
-            ),          ),
+            ),
+          ),
         ],
       ),
     );
@@ -1575,56 +1576,55 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
   }
 
-  Widget _buildTypeSelector() {
-    return Row(
-      children: EventType.values.map((type) {
-        final isSelected = type == _selectedType;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedType = type),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected
-                        ? Colors.blue.shade600
-                        : Colors.blueGrey.shade200,
-                  ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ]
-                      : null,
+Widget _buildTypeSelector() {
+  return Row(
+    children: EventType.values.map((type) {
+      final isSelected = type == _selectedType;
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: GestureDetector(
+            onTap: () => setState(() => _selectedType = type),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isSelected
+                      ? Colors.blue.shade600
+                      : Colors.blueGrey.shade200,
                 ),
-                child: Center(
-                  child: Text(
-                    type.label.toUpperCase(),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: isSelected
-                          ? Colors.blue.shade700
-                          : Colors.blueGrey.shade500,
-                    ),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Center(
+                child: Text(
+                  type.label.toUpperCase(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: isSelected
+                        ? Colors.blue.shade700
+                        : Colors.blueGrey.shade500,
                   ),
                 ),
               ),
             ),
-
           ),
-        );
-      }).toList(),
-    );
-  }
+        ),
+      );
+    }).toList(),
+  );
+}
 
   Widget _buildTimePickerTile({
     required String label,
@@ -1638,7 +1638,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
           color: const Color(0xFFF5F8FF),
-          borderRadius: BorderRadius.circular(16),          border: Border.all(color: Colors.blueGrey[100]!),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.blueGrey[100]!),
         ),
         child: Row(
           children: [
@@ -1646,13 +1647,14 @@ class _AddEventDialogState extends State<AddEventDialog> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                time == null ? '${label} time' : time.format(context),
+                time == null ? '$label time' : time.format(context),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: time == null
                       ? Colors.blueGrey[300]
-                      : Colors.blueGrey[700],                ),
+                      : Colors.blueGrey[700],
+                ),
               ),
             ),
             Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
@@ -1663,7 +1665,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-        final fallbackEnd = _startTime != null
+    final fallbackEnd = _startTime != null
         ? TimeOfDay(
             hour: (_startTime!.hour + 1) % 24,
             minute: _startTime!.minute,
@@ -1689,7 +1691,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
           if (_startTime != null && !_isEndAfterStart(selected, _startTime!)) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('End time must be after the start time.')),            );
+                  content: Text('End time must be after the start time.')
+                ),
+              );
             return;
           }
           _endTime = selected;
@@ -1706,7 +1710,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
 
   void _saveEvent() {
     final title = _titleController.text.trim();
-    if (title.isEmpty) {      
+    if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a name for this item.')),
       );
@@ -1743,11 +1747,11 @@ class _AddEventDialogState extends State<AddEventDialog> {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     if (hours > 0 && minutes > 0) {
-      return '${hours} h ${minutes} m';
+      return '$hours h $minutes m';
     } else if (hours > 0) {
-      return '${hours} h';
+      return '$hours h';
     }
-    return '${minutes} m';
+    return '$minutes m';
   }
 
   @override
@@ -2076,7 +2080,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
             ),
           ),
           const SizedBox(width: 48),
-        ],      ),
+        ],
+      ),
     );
   }
 
@@ -2143,14 +2148,15 @@ class _EditEventDialogState extends State<EditEventDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFFF5F8FF),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blueGrey[100]!),        ),
+          border: Border.all(color: Colors.blueGrey[100]!),
+        ),
         child: Row(
           children: [
             Icon(Icons.schedule_outlined, color: Colors.blueGrey[400]),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                time == null ? '${label} time' : time.format(context),
+                time == null ? '$label time' : time.format(context),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -2163,7 +2169,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
             Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
           ],
         ),
-      ),    );
+      ),
+    );
   }
 
   Future<void> _pickTime({required bool isStart}) async {
@@ -2193,7 +2200,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
           if (_start != null && !_isEndAfterStart(selected, _start!)) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('End time must be after the start time.')),
+                  content: Text('End time must be after the start time.'),
+              ),
             );
             return;
           }
@@ -2220,7 +2228,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
     if (_end != null && _start == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Choose a start time before selecting the end.')),
+            content: Text('Choose a start time before selecting the end.'),
+        ),
       );
       return;
     }
@@ -2242,15 +2251,15 @@ class _EditEventDialogState extends State<EditEventDialog> {
     Navigator.of(context).pop(updated);
   }
 
-    String _formatDuration(Duration duration) {
+  String _formatDuration(Duration duration) {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     if (hours > 0 && minutes > 0) {
-      return '${hours} h ${minutes} m';
+      return '$hours h $minutes m';
     } else if (hours > 0) {
       return '${hours} h';
     }
-    return '${minutes} m';
+    return '$minutes m';
   }
 
   @override
@@ -2267,35 +2276,21 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
 
   final List<Event> _events;
 
-DateTime? _initialDateFromQuery(String q) {
-  final dq = _parseDateQueryLoose(q);
-  if (dq == null) return null;
+  DateTime? _initialDateFromQuery(String q) {
+    final dq = _parseDateQueryLoose(q);
+    if (dq == null) return null;
 
-  // Choose a concrete date for the picker:
-  final now = DateTime.now();
-  final year  = dq.year  ?? now.year;
-  final month = dq.month ?? 1;
-  final day   = dq.day   ?? 1;
+    // Choose a concrete date for the picker:
+    final now = DateTime.now();
+    final year = dq.year ?? now.year;
+    final month = dq.month ?? 1;
+    final day = dq.day ?? 1;
 
-  // Clamp to a valid date just in case
-  final dt = _safeDate(year, month, day);
-  return dt ?? DateTime(year, month, 1);
-}
 
-DateTime? _safeDate(int year, int month, int day) {
-  if (month < 1 || month > 12) return null;
-  try {
-    final d = DateTime(year, month, day);
-    if (d.year == year && d.month == month && d.day == day) {
-      return d;
-    }
-  } catch (_) {
-    // invalid date like Feb 30
+    // Clamp to a valid date just in case
+    final dt = _safeDate(year, month, day);
+    return dt ?? DateTime(year, month, 1);
   }
-  return null;
-}
-
-
 
   List<Event> get _sortedEvents {
     final copy = List<Event>.from(_events);
@@ -2315,76 +2310,74 @@ DateTime? _safeDate(int year, int month, int day) {
     return copy;
   }
 
-List<Event> _filterEvents(String query) {
-  final trimmed = query.trim();
-  if (trimmed.isEmpty) return _sortedEvents;
+  List<Event> _filterEvents(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return _sortedEvents;
 
-  final dq = _parseDateQueryLoose(trimmed); // NEW
-  final lower = trimmed.toLowerCase();
+    final dq = _parseDateQueryLoose(trimmed);
+    final lower = trimmed.toLowerCase();
 
-  final seen = <Event>{};
-  final dateMatches = <Event>[];
-  final keywordMatches = <Event>[];
+    final seen = <Event>{};
+    final dateMatches = <Event>[];
+    final keywordMatches = <Event>[];
 
-  for (final e in _sortedEvents) {
-    final mDate = dq != null && dq.matches(e.date);
-    final mKw = e.title.toLowerCase().contains(lower) ||
-        e.description.toLowerCase().contains(lower) ||
-        e.category.toLowerCase().contains(lower) ||
-        e.type.label.toLowerCase().contains(lower);
-    if (mDate && seen.add(e)) dateMatches.add(e);
-    if (mKw   && seen.add(e)) keywordMatches.add(e);
+    for (final e in _sortedEvents) {
+      final mDate = dq != null && dq.matches(e.date);
+      final mKw = e.title.toLowerCase().contains(lower) ||
+          e.description.toLowerCase().contains(lower) ||
+          e.category.toLowerCase().contains(lower) ||
+          e.type.label.toLowerCase().contains(lower);
+      if (mDate && seen.add(e)) dateMatches.add(e);
+      if (mKw && seen.add(e)) keywordMatches.add(e);
+    }
+
+    // If the query looks like a date (even partial), prioritize date matches
+    if (dq != null && dateMatches.isNotEmpty) {
+      return [...dateMatches, ...keywordMatches];
+    }
+    return keywordMatches.isNotEmpty ? keywordMatches : dateMatches;
   }
-
-  // If the query looks like a date (even partial), prioritize date matches
-  if (dq != null && dateMatches.isNotEmpty) {
-    return [...dateMatches, ...keywordMatches];
-  }
-  return keywordMatches.isNotEmpty ? keywordMatches : dateMatches;
-}
-
 
   @override
   String get searchFieldLabel => 'Search events';
 
-@override
-List<Widget>? buildActions(BuildContext context) {
-  return [
-    IconButton(
-      tooltip: 'Pick a date',
-      icon: const Icon(Icons.calendar_today),
-      onPressed: () async {
-        final now = DateTime.now();
-        final firstDate = DateTime(now.year - 5);
-        final lastDate  = DateTime(now.year + 5);
-
-        final guessed = _initialDateFromQuery(query) ?? now;
-        final initialDate = guessed.isBefore(firstDate)
-            ? firstDate
-            : guessed.isAfter(lastDate)
-                ? lastDate
-                : guessed;
-
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: initialDate,
-          firstDate: firstDate,
-          lastDate: lastDate,
-        );
-        if (picked != null) {
-          query = DateFormat('yyyy-MM-dd').format(picked);
-          showSuggestions(context);
-        }
-      },
-    ),
-    if (query.isNotEmpty)
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
       IconButton(
-        onPressed: () => query = '',
-        icon: const Icon(Icons.clear),
-      ),
-  ];
-}
+        tooltip: 'Pick a date',
+        icon: const Icon(Icons.calendar_today),
+        onPressed: () async {
+          final now = DateTime.now();
+          final firstDate = DateTime(now.year - 5);
+          final lastDate = DateTime(now.year + 5);
 
+          final guessed = _initialDateFromQuery(query) ?? now;
+          final initialDate = guessed.isBefore(firstDate)
+              ? firstDate
+              : guessed.isAfter(lastDate)
+                  ? lastDate
+                  : guessed;
+
+          final picked = await showDatePicker(
+            context: context,
+            initialDate: initialDate,
+            firstDate: firstDate,
+            lastDate: lastDate,
+          );
+          if (picked != null) {
+            query = DateFormat('yyyy-MM-dd').format(picked);
+            showSuggestions(context);
+          }
+        },
+      ),
+      if (query.isNotEmpty)
+        IconButton(
+          onPressed: () => query = '',
+          icon: const Icon(Icons.clear),
+        ),
+    ];
+  }
 
   @override
   Widget? buildLeading(BuildContext context) {
@@ -2474,6 +2467,37 @@ List<Widget>? buildActions(BuildContext context) {
 
     return '${event.type.label} · $dateLabel · All day · ${event.category}';
   }
+
+}
+
+class _DateQuery {
+  const _DateQuery({this.year, this.month, this.day});
+
+  final int? year;
+  final int? month;
+  final int? day;
+
+  bool matches(DateTime date) {
+    if (year != null && date.year != year) return false;
+    if (month != null && date.month != month) return false;
+    if (day != null && date.day != day) return false;
+    return true;
+  }
+}
+
+DateTime? _safeDate(int year, int month, int day) {
+  if (month < 1 || month > 12) return null;
+  try {
+    final d = DateTime(year, month, day);
+    if (d.year == year && d.month == month && d.day == day) {
+      return d;
+    }
+  } catch (_) {
+    // invalid date like Feb 30
+  }
+  return null;
+}
+
 
 DateTime _todayBase() {
   final n = DateTime.now();
@@ -2590,5 +2614,4 @@ _DateQuery? _parseDateQueryLoose(String input) {
   }
 
   return null; // not a date-like query
-}
 }
