@@ -1305,6 +1305,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
         ? _formatDuration(_calculatedDuration!)
         : null;
 
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
+
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -1325,182 +1328,114 @@ class _AddEventDialogState extends State<AddEventDialog> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: MainAxisSize.max,
               children: [
                 _buildHeader(context),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 520),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 24,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildTypeSelector(),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _titleController,
-                          decoration: const InputDecoration(
-                            labelText: 'Name *',
-                            filled: true,
-                            prefixIcon: Icon(Icons.edit_outlined),
-                          ),
-                          autofocus: true,
-                        ),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 16,
-                          runSpacing: 16,
-                          children: [
-                            SizedBox(
-                              width: 180,
-                              child: DropdownButtonFormField<String>(
-                                value: _selectedReminderLabel,
-                                decoration: const InputDecoration(
-                                  labelText: 'Notification',
-                                  prefixIcon: Icon(Icons.notifications_outlined),
-                                  filled: true,
-                                ),
-                                items: kReminderOptions.keys
-                                    .map(
-                                      (label) => DropdownMenuItem<String>(
-                                        value: label,
-                                        child: Text(label),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _selectedReminderLabel = value);
-                                },
-                              ),
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        24,
+                        20,
+                        24 + viewInsets,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTypeSelector(),
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _titleController,
+                            decoration: const InputDecoration(
+                              labelText: 'Name *',
+                              filled: true,
+                              prefixIcon: Icon(Icons.edit_outlined),
                             ),
-                            SizedBox(
-                              width: 180,
-                              child: DropdownButtonFormField<String>(
-                                value: _selectedCategory,
-                                decoration: const InputDecoration(
-                                  labelText: 'Add to',
-                                  prefixIcon: Icon(Icons.folder_outlined),
-                                  filled: true,
-                                ),
-                                items: kEventCategories
-                                    .map(
-                                      (category) => DropdownMenuItem<String>(
-                                        value: category,
-                                        child: Text(category),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) => setState(
-                                  () => _selectedCategory = value ?? 'General',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.blueGrey[50]!),
+                            autofocus: true,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(height: 16),
+                          _buildReminderAndCategoryFields(),
+                          const SizedBox(height: 20),
+                          Text('Date',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Text(
+                            formattedDate,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(color: Colors.blueGrey.shade700),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
                             children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.calendar_today_outlined,
-                                      color: Colors.blue),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    formattedDate,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildTimePickerTile(
-                                      label: 'Start',
-                                      time: _startTime,
-                                      onTap: () => _pickTime(isStart: true),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildTimePickerTile(
-                                      label: 'End',
-                                      time: _endTime,
-                                      onTap: () => _pickTime(isStart: false),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (durationLabel != null) ...[
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Icon(Icons.hourglass_bottom,
-                                        color: Colors.orange[400]),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Duration: $durationLabel',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.blueGrey[600],
-                                      ),
-                                    ),
-                                  ],
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'Start',
+                                  time: _startTime,
+                                  onTap: () => _pickTime(isStart: true),
                                 ),
-                              ],
-                              const SizedBox(height: 16),
-                              DropdownButtonFormField<RepeatFrequency>(
-                                value: _repeatFrequency,
-                                decoration: const InputDecoration(
-                                  labelText: 'Repeat',
-                                  prefixIcon: Icon(Icons.autorenew_outlined),
-                                  filled: true,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'End',
+                                  time: _endTime,
+                                  onTap: () => _pickTime(isStart: false),
                                 ),
-                                items: RepeatFrequency.values
-                                    .map(
-                                      (freq) => DropdownMenuItem<RepeatFrequency>(
-                                        value: freq,
-                                        child: Text(freq.label),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _repeatFrequency = value);
-                                },
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _descriptionController,
-                          minLines: 3,
-                          maxLines: 5,
-                          decoration: const InputDecoration(
-                            labelText: 'Details',
-                            alignLabelWithHint: true,
-                            filled: true,
-                            prefixIcon: Icon(Icons.notes_outlined),
+                          if (durationLabel != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Duration: $durationLabel',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: Colors.blueGrey.shade600),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          DropdownButtonFormField<RepeatFrequency>(
+                            value: _repeatFrequency,
+                            decoration: const InputDecoration(
+                              labelText: 'Repeat',
+                              prefixIcon: Icon(Icons.repeat_outlined),
+                              filled: true,
+                            ),
+                            items: RepeatFrequency.values
+                                .map(
+                                  (freq) => DropdownMenuItem<RepeatFrequency>(
+                                    value: freq,
+                                    child: Text(freq.label),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _repeatFrequency = value);
+                            },
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _descriptionController,
+                            minLines: 3,
+                            maxLines: 5,
+                            decoration: const InputDecoration(
+                              labelText: 'Details',
+                              alignLabelWithHint: true,
+                              filled: true,
+                              prefixIcon: Icon(Icons.notes_outlined),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1545,6 +1480,77 @@ class _AddEventDialogState extends State<AddEventDialog> {
       ),
     );
   }
+
+  Widget _buildReminderAndCategoryFields() {
+    final reminderField = DropdownButtonFormField<String>(
+      value: _selectedReminderLabel,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Notification',
+        prefixIcon: Icon(Icons.notifications_outlined),
+        filled: true,
+      ),
+      items: kReminderOptions.keys
+          .map(
+            (label) => DropdownMenuItem<String>(
+              value: label,
+              child: Text(label),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _selectedReminderLabel = value);
+      },
+    );
+
+    final categoryField = DropdownButtonFormField<String>(
+      value: _selectedCategory,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Add to',
+        prefixIcon: Icon(Icons.folder_outlined),
+        filled: true,
+      ),
+      items: kEventCategories
+          .map(
+            (category) => DropdownMenuItem<String>(
+              value: category,
+              child: Text(category),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _selectedCategory = value);
+      },
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 16.0;
+        final isNarrow = constraints.maxWidth < 380;
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              reminderField,
+              const SizedBox(height: spacing),
+              categoryField,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: reminderField),
+            const SizedBox(width: spacing),
+            Expanded(child: categoryField),
+          ],
+        );
+      },
+    );
+  }
+
 
   Widget _buildHeader(BuildContext context) {
     return Container(
@@ -1814,6 +1820,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
         ? _formatDuration(_calculatedDuration!)
         : null;
 
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -1834,182 +1842,114 @@ class _EditEventDialogState extends State<EditEventDialog> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: MainAxisSize.max,
               children: [
                 _buildHeader(context),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 520),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 24,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildTypeSelector(),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _title,
-                          decoration: const InputDecoration(
-                            labelText: 'Name *',
-                            filled: true,
-                            prefixIcon: Icon(Icons.edit_outlined),
-                          ),
-                          autofocus: true,
-                        ),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 16,
-                          runSpacing: 16,
-                          children: [
-                            SizedBox(
-                              width: 180,
-                              child: DropdownButtonFormField<String>(
-                                value: _reminderLabel,
-                                decoration: const InputDecoration(
-                                  labelText: 'Notification',
-                                  prefixIcon: Icon(Icons.notifications_outlined),
-                                  filled: true,
-                                ),
-                                items: kReminderOptions.keys
-                                    .map(
-                                      (label) => DropdownMenuItem<String>(
-                                        value: label,
-                                        child: Text(label),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _reminderLabel = value);
-                                },
-                              ),
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        24,
+                        20,
+                        24 + viewInsets,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTypeSelector(),
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _title,
+                            decoration: const InputDecoration(
+                              labelText: 'Name *',
+                              filled: true,
+                              prefixIcon: Icon(Icons.edit_outlined),
                             ),
-                            SizedBox(
-                              width: 180,
-                              child: DropdownButtonFormField<String>(
-                                value: _category,
-                                decoration: const InputDecoration(
-                                  labelText: 'Add to',
-                                  prefixIcon: Icon(Icons.folder_outlined),
-                                  filled: true,
-                                ),
-                                items: kEventCategories
-                                    .map(
-                                      (category) => DropdownMenuItem<String>(
-                                        value: category,
-                                        child: Text(category),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) => setState(
-                                  () => _category = value ?? 'General',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.blueGrey[50]!),
+                            autofocus: true,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(height: 16),
+                          _buildReminderAndCategoryFields(),
+                          const SizedBox(height: 20),
+                          Text('Date',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Text(
+                            formattedDate,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(color: Colors.blueGrey.shade700),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
                             children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.calendar_today_outlined,
-                                      color: Colors.blue),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    formattedDate,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildTimePickerTile(
-                                      label: 'Start',
-                                      time: _start,
-                                      onTap: () => _pickTime(isStart: true),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildTimePickerTile(
-                                      label: 'End',
-                                      time: _end,
-                                      onTap: () => _pickTime(isStart: false),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (durationLabel != null) ...[
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Icon(Icons.hourglass_bottom,
-                                        color: Colors.orange[400]),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Duration: $durationLabel',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.blueGrey[600],
-                                      ),
-                                    ),
-                                  ],
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'Start',
+                                  time: _start,
+                                  onTap: () => _pickTime(isStart: true),
                                 ),
-                              ],
-                              const SizedBox(height: 16),
-                              DropdownButtonFormField<RepeatFrequency>(
-                                value: _repeatFrequency,
-                                decoration: const InputDecoration(
-                                  labelText: 'Repeat',
-                                  prefixIcon: Icon(Icons.autorenew_outlined),
-                                  filled: true,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'End',
+                                  time: _end,
+                                  onTap: () => _pickTime(isStart: false),
                                 ),
-                                items: RepeatFrequency.values
-                                    .map(
-                                      (freq) => DropdownMenuItem<RepeatFrequency>(
-                                        value: freq,
-                                        child: Text(freq.label),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  if (value == null) return;
-                                  setState(() => _repeatFrequency = value);
-                                },
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _desc,
-                          minLines: 3,
-                          maxLines: 5,
-                          decoration: const InputDecoration(
-                            labelText: 'Details',
-                            alignLabelWithHint: true,
-                            filled: true,
-                            prefixIcon: Icon(Icons.notes_outlined),
+                          if (durationLabel != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Duration: $durationLabel',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: Colors.blueGrey.shade600),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          DropdownButtonFormField<RepeatFrequency>(
+                            value: _repeatFrequency,
+                            decoration: const InputDecoration(
+                              labelText: 'Repeat',
+                              prefixIcon: Icon(Icons.repeat_outlined),
+                              filled: true,
+                            ),
+                            items: RepeatFrequency.values
+                                .map(
+                                  (freq) => DropdownMenuItem<RepeatFrequency>(
+                                    value: freq,
+                                    child: Text(freq.label),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _repeatFrequency = value);
+                            },
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _desc,
+                            minLines: 3,
+                            maxLines: 5,
+                            decoration: const InputDecoration(
+                              labelText: 'Details',
+                              alignLabelWithHint: true,
+                              filled: true,
+                              prefixIcon: Icon(Icons.notes_outlined),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -2054,6 +1994,77 @@ class _EditEventDialogState extends State<EditEventDialog> {
       ),
     );
   }
+
+  Widget _buildReminderAndCategoryFields() {
+    final reminderField = DropdownButtonFormField<String>(
+      value: _reminderLabel,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Notification',
+        prefixIcon: Icon(Icons.notifications_outlined),
+        filled: true,
+      ),
+      items: kReminderOptions.keys
+          .map(
+            (label) => DropdownMenuItem<String>(
+              value: label,
+              child: Text(label),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _reminderLabel = value);
+      },
+    );
+
+    final categoryField = DropdownButtonFormField<String>(
+      value: _category,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Add to',
+        prefixIcon: Icon(Icons.folder_outlined),
+        filled: true,
+      ),
+      items: kEventCategories
+          .map(
+            (category) => DropdownMenuItem<String>(
+              value: category,
+              child: Text(category),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _category = value);
+      },
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 16.0;
+        final isNarrow = constraints.maxWidth < 380;
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              reminderField,
+              const SizedBox(height: spacing),
+              categoryField,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: reminderField),
+            const SizedBox(width: spacing),
+            Expanded(child: categoryField),
+          ],
+        );
+      },
+    );
+  }
+
 
   Widget _buildHeader(BuildContext context) {
     return Container(
