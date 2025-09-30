@@ -795,150 +795,170 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildEventTile(Event event) {
-    final categoryColor = _getCategoryColor(event.category);
-    final timeLabel = event.hasTimeRange
-        ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
-        : 'All day';
-    final isTask = event.type == EventType.task;
-    final isCompleted = isTask && event.isCompleted;
-    final typeIcon = isTask
-        ? Icons.check_circle_outline
-        : Icons.event_available_outlined;
-    final typeColor = isTask
-        ? const Color(0xFFF1E8FF)
-        : const Color(0xFFE0F2FF);
-    final titleStyle = TextStyle(
-      fontSize: 22,
-      fontWeight: FontWeight.w800,
-      color: isCompleted ? Colors.blueGrey[400] : Colors.blueGrey[900],
-      decoration: isCompleted ? TextDecoration.lineThrough : null,
-    );
-    final subtitleStyle = TextStyle(
-      fontSize: 15,
-      fontWeight: FontWeight.w600,
-      color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
-      decoration: isCompleted ? TextDecoration.lineThrough : null,
-    );
-    final descriptionStyle = TextStyle(
-      fontSize: 13,
-      color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
-      decoration: isCompleted ? TextDecoration.lineThrough : null,
-    );
+Widget _buildEventTile(Event event) {
+  final categoryColor = _getCategoryColor(event.category);
+  final timeLabel = event.hasTimeRange
+      ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
+      : 'All day';
 
-    final chips = <Widget>[
-      _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+  final isTask = event.type == EventType.task;
+  final isCompleted = isTask && event.isCompleted;
+
+  final typeIcon =
+      isTask ? Icons.check_circle_outline : Icons.event_available_outlined;
+  final typeColor =
+      isTask ? const Color(0xFFF1E8FF) : const Color(0xFFE0F2FF);
+
+  final titleStyle = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.w800,
+    color: isCompleted ? Colors.blueGrey[400] : Colors.blueGrey[900],
+    decoration: isCompleted ? TextDecoration.lineThrough : null,
+  );
+  final subtitleStyle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
+    decoration: isCompleted ? TextDecoration.lineThrough : null,
+  );
+  final descriptionStyle = TextStyle(
+    fontSize: 13,
+    color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
+    decoration: isCompleted ? TextDecoration.lineThrough : null,
+  );
+
+  final chips = <Widget>[
+    _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+    _buildInfoChip(Icons.folder_outlined, event.category,
+        background: const Color(0xFFF1F4FF)),
+    if (event.reminder != null)
       _buildInfoChip(
-        Icons.folder_outlined,
-        event.category,
-        background: const Color(0xFFF1F4FF),
+        Icons.notifications_active_outlined,
+        reminderLabelFromDuration(event.reminder),
+        background: const Color(0xFFFFF1E6),
       ),
-      if (event.reminder != null)
-        _buildInfoChip(
-          Icons.notifications_active_outlined,
-          reminderLabelFromDuration(event.reminder),
-          background: const Color(0xFFFFF1E6),
-        ),
-      if (event.repeatFrequency != RepeatFrequency.none)
-        _buildInfoChip(
-          Icons.autorenew_outlined,
-          event.repeatFrequency.label,
-          background: const Color(0xFFE7F8F2),
-        ),
-      if (isCompleted)
-        _buildInfoChip(
-          Icons.check_circle,
-          'Completed',
-          background: const Color(0xFFE7F8F2),
-        ),
-    ];
+    if (event.repeatFrequency != RepeatFrequency.none)
+      _buildInfoChip(
+        Icons.autorenew_outlined,
+        event.repeatFrequency.label,
+        background: const Color(0xFFE7F8F2),
+      ),
+    if (isCompleted)
+      _buildInfoChip(
+        Icons.check_circle,
+        'Completed',
+        background: const Color(0xFFE7F8F2),
+      ),
+  ];
 
-    final iconColor = isCompleted ? Colors.green[600] : Colors.blueGrey[300];
+  final iconColor = isCompleted ? Colors.green[600] : Colors.blueGrey[300];
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () => _showEditEventDialog(event),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.blueGrey[50]!),
-          color: isCompleted ? const Color(0xFFF8FAFD) : Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  margin: const EdgeInsets.only(top: 6, right: 12),
-                  decoration: BoxDecoration(
-                    color: categoryColor,
-                    shape: BoxShape.circle,
-                  ),
+  return InkWell(
+    borderRadius: BorderRadius.circular(20),
+    onTap: () => _showEditEventDialog(event),
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blueGrey[50]!),
+        color: isCompleted ? const Color(0xFFF8FAFD) : Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // HEADER: dot + title + time
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.only(top: 6, right: 10),
+                decoration: BoxDecoration(
+                  color: categoryColor,
+                  shape: BoxShape.circle,
                 ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        event.title,
-                        style: titleStyle,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        timeLabel,
-                        style: subtitleStyle,
-                      ),
-                    ],
-                  ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(event.title, style: titleStyle),
+                    const SizedBox(height: 2),
+                    Text(timeLabel, style: subtitleStyle),
+                  ],
                 ),
-                if (isTask)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: IconButton(
-                      onPressed: () => _toggleTaskCompletion(event),
-                      icon: Icon(
-                        isCompleted
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                      ),
-                      color: iconColor,
-                      tooltip:
-                          isCompleted ? 'Mark as incomplete' : 'Mark as completed',
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: chips,
-            ),
-            if (event.description.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                event.description,
-                style: descriptionStyle,
               ),
             ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // CHIPS
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: chips,
+          ),
+
+          // DESCRIPTION (optional)
+          if (event.description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(event.description, style: descriptionStyle),
           ],
-        ),
+
+          // TASK TOGGLE under description
+          if (isTask) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _toggleTaskCompletion(event),
+                  icon: Icon(
+                    isCompleted
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    size: 22,
+                  ),
+                  color: iconColor,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isCompleted ? 'Completed' : 'Mark as complete',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isCompleted
+                          ? Colors.green[700]
+                          : Colors.blueGrey[600],
+                    ),
+                    softWrap: true,
+                    overflow: TextOverflow.visible,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
+
+
+
 
 
   Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
