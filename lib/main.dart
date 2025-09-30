@@ -923,14 +923,11 @@ Widget _buildEventTile(Event event) {
               children: [
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                  splashRadius: 16,
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                   onPressed: () => _toggleTaskCompletion(event),
-                  icon: Icon(
-                    isCompleted
-                        ? Icons.check_circle
-                        : Icons.radio_button_unchecked,
-                    size: 22,
-                  ),
+                  icon: Icon(isCompleted ? Icons.check_circle : Icons.radio_button_unchecked, size: 22),
                   color: iconColor,
                 ),
                 const SizedBox(width: 8),
