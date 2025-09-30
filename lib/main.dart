@@ -5,6 +5,71 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum EventType { event, task }
+
+extension EventTypeExtension on EventType {
+  String get label {
+    switch (this) {
+      case EventType.event:
+        return 'Event';
+      case EventType.task:
+        return 'Task';
+    }
+  }
+}
+
+enum RepeatFrequency { none, daily, weekly, monthly }
+
+extension RepeatFrequencyExtension on RepeatFrequency {
+  String get label {
+    switch (this) {
+      case RepeatFrequency.none:
+        return 'Does not repeat';
+      case RepeatFrequency.daily:
+        return 'Daily';
+      case RepeatFrequency.weekly:
+        return 'Weekly';
+      case RepeatFrequency.monthly:
+        return 'Monthly';
+    }
+  }
+}
+
+const Map<String, Duration?> kReminderOptions = <String, Duration?>{
+  'No reminder': null,
+  '5 minutes before': Duration(minutes: 5),
+  '15 minutes before': Duration(minutes: 15),
+  '30 minutes before': Duration(minutes: 30),
+  '1 hour before': Duration(hours: 1),
+  '1 day before': Duration(days: 1),
+  '2 days before': Duration(days: 2),
+  '1 week before': Duration(days: 7),
+};
+
+const List<String> kEventCategories = <String>[
+  'General',
+  'Work',
+  'Personal',
+  'Health',
+  'Education',
+  'Travel',
+  'Entertainment',
+];
+
+String reminderLabelFromDuration(Duration? duration) {
+  for (final entry in kReminderOptions.entries) {
+    final option = entry.value;
+    if (option == null && duration == null) {
+      return entry.key;
+    }
+    if (option != null && duration != null &&
+        option.inMinutes == duration.inMinutes) {
+      return entry.key;
+    }
+  }
+  return kReminderOptions.keys.first;
+}
+
 
 void main() {
   runApp(const CalendarApp());
@@ -34,6 +99,9 @@ class Event {
   final TimeOfDay? startTime;
   final TimeOfDay? endTime;
   final String category;
+  final EventType type;
+  final Duration? reminder;
+  final RepeatFrequency repeatFrequency;
 
   const Event({
     required this.title,
@@ -42,11 +110,14 @@ class Event {
     this.startTime,
     this.endTime,
     this.category = 'General',
+    this.type = EventType.event,
+    this.reminder,
+    this.repeatFrequency = RepeatFrequency.none,
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
 
-    Map<String, dynamic> toMap() {
+  Map<String, dynamic> toMap() {
     return {
       'title': title,
       'description': description,
@@ -54,6 +125,9 @@ class Event {
       'startTime': startTime != null ? _timeOfDayToMap(startTime!) : null,
       'endTime': endTime != null ? _timeOfDayToMap(endTime!) : null,
       'category': category,
+      'type': type.name,
+      'reminderMinutes': reminder?.inMinutes,
+      'repeatFrequency': repeatFrequency.name,
     };
   }
 
@@ -73,11 +147,40 @@ class Event {
       startTime: _timeOfDayFromMap(map['startTime']),
       endTime: _timeOfDayFromMap(map['endTime']),
       category: (map['category'] as String?) ?? 'General',
+      type: _eventTypeFromString(map['type'] as String?) ?? EventType.event,
+      reminder: _durationFromMinutes(map['reminderMinutes']),
+      repeatFrequency:
+          _repeatFrequencyFromString(map['repeatFrequency'] as String?) ??
+              RepeatFrequency.none,
     );
   }
 
   static Map<String, int> _timeOfDayToMap(TimeOfDay time) {
     return {'hour': time.hour, 'minute': time.minute};
+  }
+
+    static Duration? _durationFromMinutes(dynamic minutes) {
+    if (minutes == null) return null;
+    if (minutes is num) {
+      return Duration(minutes: minutes.round());
+    }
+    return null;
+  }
+
+  static EventType? _eventTypeFromString(String? value) {
+    if (value == null) return null;
+    return EventType.values.firstWhere(
+      (type) => type.name == value,
+      orElse: () => EventType.event,
+    );
+  }
+
+  static RepeatFrequency? _repeatFrequencyFromString(String? value) {
+    if (value == null) return null;
+    return RepeatFrequency.values.firstWhere(
+      (freq) => freq.name == value,
+      orElse: () => RepeatFrequency.none,
+    );
   }
 
   static TimeOfDay? _timeOfDayFromMap(dynamic data) {
@@ -651,62 +754,104 @@ Widget _buildEventTile(Event event) {
   final timeLabel = event.hasTimeRange
       ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
       : 'All day';
+  final typeIcon = event.type == EventType.task
+      ? Icons.check_circle_outline
+      : Icons.event_available_outlined;
+  final typeColor = event.type == EventType.task
+      ? const Color(0xFFF1E8FF)
+      : const Color(0xFFE0F2FF);
+  final chips = <Widget>[
+    _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+    _buildInfoChip(Icons.folder_outlined, event.category,
+        background: const Color(0xFFF1F4FF)),
+    if (event.reminder != null)
+      _buildInfoChip(
+        Icons.notifications_active_outlined,
+        reminderLabelFromDuration(event.reminder),
+        background: const Color(0xFFFFF1E6),
+      ),
+    if (event.repeatFrequency != RepeatFrequency.none)
+      _buildInfoChip(
+        Icons.autorenew_outlined,
+        event.repeatFrequency.label,
+        background: const Color(0xFFE7F8F2),
+      ),
+  ];
 
   return InkWell(
-    borderRadius: BorderRadius.circular(16),
+    borderRadius: BorderRadius.circular(20),
     onTap: () => _showEditEventDialog(event),
     child: Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.blueGrey[50]!),
         color: Colors.white,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0,4),
+            blurRadius: 12,
+            offset: const Offset(0,6),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // colored dot only
-          Container(
-            width: 12,
-            height: 12,
-            margin: const EdgeInsets.only(top: 4, right: 12),
-            decoration: BoxDecoration(color: categoryColor, shape: BoxShape.circle),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                margin: const EdgeInsets.only(top: 6, right: 12),
+                decoration: BoxDecoration(
+                  color: categoryColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.title,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      timeLabel,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blueGrey[600],
+                      ),
+                    ),
+                  ],
+                ),
           ),
-          Expanded(
-            child: FittedBox(
-              alignment: Alignment.centerLeft,
-              fit: BoxFit.scaleDown,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    event.title,
-                    style: const TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  Text(
-                    timeLabel,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blueGrey[600],
-                    ),
-                  ),
-                ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: chips,
+          ),
+          if (event.description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              event.description,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.blueGrey[600],
               ),
             ),
-          ),
-          // IconButton removed to give more space
+          ],
         ],
       ),
     ),
@@ -714,7 +859,30 @@ Widget _buildEventTile(Event event) {
 }
 
 
-
+Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: background ?? const Color(0xFFF1F4FF),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.blueGrey[600]),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.blueGrey[700],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
 
 
@@ -763,12 +931,28 @@ Widget _buildEventTile(Event event) {
     final formattedDate = DateFormat('EEEE, MMMM d').format(_selectedDate);
 
     final summary = events.isEmpty
-        ? 'No tasks scheduled for $formattedDate.'
-        : 'Tasks for $formattedDate:\n${events.map((e) => '- ${e.title} (${e.hasTimeRange ? '${_formatTimeOfDay(e.startTime!)} - ${_formatTimeOfDay(e.endTime!)}' : 'All day'})').join('\n')}';
+        ? 'No plans scheduled for $formattedDate.'
+        : 'Plans for $formattedDate:\n${events.map(_buildShareLine).join('\n')}';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(summary)),
     );
+  }
+
+    String _buildShareLine(Event event) {
+    final timeSegment = event.hasTimeRange
+        ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
+        : 'All day';
+    final buffer = StringBuffer('- ${event.type.label}: ${event.title} ($timeSegment)');
+
+    if (event.repeatFrequency != RepeatFrequency.none) {
+      buffer.write(' · repeats ${event.repeatFrequency.label.toLowerCase()}');
+    }
+    if (event.reminder != null) {
+      buffer.write(' · reminder ${reminderLabelFromDuration(event.reminder)}');
+    }
+
+    return buffer.toString();
   }
 
   void _shareFreeTime() {
@@ -1080,7 +1264,7 @@ class AddEventDialog extends StatefulWidget {
   const AddEventDialog({
     required this.selectedDate,
     required this.onEventAdded,
-        super.key,
+    super.key,
   });
   
   final DateTime selectedDate;
@@ -1093,130 +1277,368 @@ class AddEventDialog extends StatefulWidget {
 class _AddEventDialogState extends State<AddEventDialog> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  EventType _selectedType = EventType.event;
   String _selectedCategory = 'General';
+  String _selectedReminderLabel = kReminderOptions.keys.first;
+  RepeatFrequency _repeatFrequency = RepeatFrequency.none;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
 
-  final List<String> _categories = const [
-    'General',
-    'Work',
-    'Personal',
-    'Health',
-    'Education',
-    'Travel',
-    'Entertainment',
-  ];
+  Duration? get _calculatedDuration {
+    if (_startTime == null || _endTime == null) {
+      return null;
+    }
+    final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
+    final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+    if (endMinutes <= startMinutes) {
+      return null;
+    }
+    return Duration(minutes: endMinutes - startMinutes);
+  }
 
   @override
   Widget build(BuildContext context) {
-      final formattedDate = DateFormat('EEEE, MMMM d').format(widget.selectedDate);
+    final formattedDate =
+        DateFormat('EEEE, MMM d, yyyy').format(widget.selectedDate);
+    final durationLabel = _calculatedDuration != null
+        ? _formatDuration(_calculatedDuration!)
+        : null;
 
-    return AlertDialog(
-      title: const Text('Add Event'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Event Title *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.title),
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9F2FF),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
               ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description (Optional)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.description_outlined),
-              ),
-              minLines: 1,
-              maxLines: 3,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedCategory,
-              decoration: const InputDecoration(
-                labelText: 'Category',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.category_outlined),
-              ),
-              items: _categories
-                  .map(
-                    (category) => DropdownMenuItem<String>(
-                      value: category,
-                      child: Text(category),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(context),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 520),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 24,
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _selectedCategory = value ?? 'General'),
-            ),
-            const SizedBox(height: 16),
-            _buildTimePickerTile(
-              label: 'Start time',
-              time: _startTime,
-              onTap: () => _pickTime(isStart: true),
-            ),
-            const SizedBox(height: 12),
-            _buildTimePickerTile(
-              label: 'End time',
-              time: _endTime,
-              onTap: () => _pickTime(isStart: false),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today_outlined, color: Colors.blue),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Date: $formattedDate',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTypeSelector(),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _titleController,
+                          decoration: const InputDecoration(
+                            labelText: 'Name *',
+                            filled: true,
+                            prefixIcon: Icon(Icons.edit_outlined),
+                          ),
+                          autofocus: true,
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: [
+                            SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField<String>(
+                                value: _selectedReminderLabel,
+                                decoration: const InputDecoration(
+                                  labelText: 'Notification',
+                                  prefixIcon: Icon(Icons.notifications_outlined),
+                                  filled: true,
+                                ),
+                                items: kReminderOptions.keys
+                                    .map(
+                                      (label) => DropdownMenuItem<String>(
+                                        value: label,
+                                        child: Text(label),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _selectedReminderLabel = value);
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField<String>(
+                                value: _selectedCategory,
+                                decoration: const InputDecoration(
+                                  labelText: 'Add to',
+                                  prefixIcon: Icon(Icons.folder_outlined),
+                                  filled: true,
+                                ),
+                                items: kEventCategories
+                                    .map(
+                                      (category) => DropdownMenuItem<String>(
+                                        value: category,
+                                        child: Text(category),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) => setState(
+                                  () => _selectedCategory = value ?? 'General',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.blueGrey[50]!),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_today_outlined,
+                                      color: Colors.blue),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    formattedDate,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildTimePickerTile(
+                                      label: 'Start',
+                                      time: _startTime,
+                                      onTap: () => _pickTime(isStart: true),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildTimePickerTile(
+                                      label: 'End',
+                                      time: _endTime,
+                                      onTap: () => _pickTime(isStart: false),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (durationLabel != null) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(Icons.hourglass_bottom,
+                                        color: Colors.orange[400]),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Duration: $durationLabel',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.blueGrey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              DropdownButtonFormField<RepeatFrequency>(
+                                value: _repeatFrequency,
+                                decoration: const InputDecoration(
+                                  labelText: 'Repeat',
+                                  prefixIcon: Icon(Icons.autorenew_outlined),
+                                  filled: true,
+                                ),
+                                items: RepeatFrequency.values
+                                    .map(
+                                      (freq) => DropdownMenuItem<RepeatFrequency>(
+                                        value: freq,
+                                        child: Text(freq.label),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _repeatFrequency = value);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _descriptionController,
+                          minLines: 3,
+                          maxLines: 5,
+                          decoration: const InputDecoration(
+                            labelText: 'Details',
+                            alignLabelWithHint: true,
+                            filled: true,
+                            prefixIcon: Icon(Icons.notes_outlined),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(28),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.check),
+                          label: const Text('Save'),
+                          onPressed: _saveEvent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _saveEvent,
-  style: TextButton.styleFrom(
-            backgroundColor: Colors.blue[600],
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Add Event'),
-        ),
-      ],
     );
   }
 
-    Widget _buildTimePickerTile({
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD6E6FF),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                _selectedType.label,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 48),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    return Row(
+      children: EventType.values.map((type) {
+        final isSelected = type == _selectedType;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedType = type),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.blue.shade600
+                        : Colors.blueGrey.shade200,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    type.label.toUpperCase(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isSelected
+                          ? Colors.blue.shade700
+                          : Colors.blueGrey.shade500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildTimePickerTile({
     required String label,
     required TimeOfDay? time,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blueGrey[100]!),
+          color: const Color(0xFFF5F8FF),
+          borderRadius: BorderRadius.circular(16),          border: Border.all(color: Colors.blueGrey[100]!),
         ),
         child: Row(
           children: [
@@ -1224,12 +1646,13 @@ class _AddEventDialogState extends State<AddEventDialog> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                time == null ? 'Select $label' : time.format(context),
+                time == null ? '${label} time' : time.format(context),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: time == null ? Colors.blueGrey[300] : Colors.blueGrey[700],
-                ),
+                  color: time == null
+                      ? Colors.blueGrey[300]
+                      : Colors.blueGrey[700],                ),
               ),
             ),
             Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
@@ -1240,14 +1663,20 @@ class _AddEventDialogState extends State<AddEventDialog> {
   }
 
   Future<void> _pickTime({required bool isStart}) async {
+        final fallbackEnd = _startTime != null
+        ? TimeOfDay(
+            hour: (_startTime!.hour + 1) % 24,
+            minute: _startTime!.minute,
+          )
+        : const TimeOfDay(hour: 10, minute: 0);
     final initialTime = isStart
         ? (_startTime ?? const TimeOfDay(hour: 9, minute: 0))
-        : (_endTime ?? const TimeOfDay(hour: 10, minute: 0));
+        : (_endTime ?? fallbackEnd);
     final selected = await showTimePicker(
       context: context,
       initialTime: initialTime,
     );
-    if (!mounted) return; 
+    if (!mounted) return;
 
     if (selected != null) {
       setState(() {
@@ -1259,8 +1688,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
         } else {
           if (_startTime != null && !_isEndAfterStart(selected, _startTime!)) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('End time must be after the start time.')),
-            );
+              const SnackBar(
+                  content: Text('End time must be after the start time.')),            );
             return;
           }
           _endTime = selected;
@@ -1276,31 +1705,49 @@ class _AddEventDialogState extends State<AddEventDialog> {
   }
 
   void _saveEvent() {
-    if (_titleController.text.trim().isEmpty) {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {      
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter an event title.')),
+        const SnackBar(content: Text('Please enter a name for this item.')),
       );
       return;
     }
 
     if (_endTime != null && _startTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please choose a start time before the end time.')),
-      );
+        const SnackBar(
+            content: Text('Choose a start time before selecting the end.')),      );
       return;
     }
 
+    final reminderDuration = kReminderOptions[_selectedReminderLabel];
+
+
     final event = Event(
-      title: _titleController.text.trim(),
+      title: title,
       description: _descriptionController.text.trim(),
       date: widget.selectedDate,
       startTime: _startTime,
       endTime: _endTime,
       category: _selectedCategory,
+      type: _selectedType,
+      reminder: reminderDuration,
+      repeatFrequency: _repeatFrequency,
     );
 
     widget.onEventAdded(event);
     Navigator.of(context).pop();
+  }
+
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours > 0 && minutes > 0) {
+      return '${hours} h ${minutes} m';
+    } else if (hours > 0) {
+      return '${hours} h';
+    }
+    return '${minutes} m';
   }
 
   @override
@@ -1322,7 +1769,10 @@ class EditEventDialog extends StatefulWidget {
 class _EditEventDialogState extends State<EditEventDialog> {
   late TextEditingController _title;
   late TextEditingController _desc;
+  late EventType _type;
   late String _category;
+  late String _reminderLabel;
+  late RepeatFrequency _repeatFrequency;
   TimeOfDay? _start;
   TimeOfDay? _end;
 
@@ -1331,10 +1781,476 @@ class _EditEventDialogState extends State<EditEventDialog> {
     super.initState();
     final init = widget.initial;
     _title = TextEditingController(text: init.title);
-    _desc  = TextEditingController(text: init.description);
+    _desc = TextEditingController(text: init.description);
+    _type = init.type;
     _category = init.category;
+    _reminderLabel = reminderLabelFromDuration(init.reminder);
+    _repeatFrequency = init.repeatFrequency;
     _start = init.startTime;
-    _end   = init.endTime;
+    _end = init.endTime;
+  }
+
+  Duration? get _calculatedDuration {
+    if (_start == null || _end == null) {
+      return null;
+    }
+    final startMinutes = _start!.hour * 60 + _start!.minute;
+    final endMinutes = _end!.hour * 60 + _end!.minute;
+    if (endMinutes <= startMinutes) {
+      return null;
+    }
+    return Duration(minutes: endMinutes - startMinutes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final formattedDate =
+        DateFormat('EEEE, MMM d, yyyy').format(widget.initial.date);
+    final durationLabel = _calculatedDuration != null
+        ? _formatDuration(_calculatedDuration!)
+        : null;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9F2FF),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(context),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 520),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 24,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTypeSelector(),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _title,
+                          decoration: const InputDecoration(
+                            labelText: 'Name *',
+                            filled: true,
+                            prefixIcon: Icon(Icons.edit_outlined),
+                          ),
+                          autofocus: true,
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: [
+                            SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField<String>(
+                                value: _reminderLabel,
+                                decoration: const InputDecoration(
+                                  labelText: 'Notification',
+                                  prefixIcon: Icon(Icons.notifications_outlined),
+                                  filled: true,
+                                ),
+                                items: kReminderOptions.keys
+                                    .map(
+                                      (label) => DropdownMenuItem<String>(
+                                        value: label,
+                                        child: Text(label),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _reminderLabel = value);
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField<String>(
+                                value: _category,
+                                decoration: const InputDecoration(
+                                  labelText: 'Add to',
+                                  prefixIcon: Icon(Icons.folder_outlined),
+                                  filled: true,
+                                ),
+                                items: kEventCategories
+                                    .map(
+                                      (category) => DropdownMenuItem<String>(
+                                        value: category,
+                                        child: Text(category),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) => setState(
+                                  () => _category = value ?? 'General',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.blueGrey[50]!),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_today_outlined,
+                                      color: Colors.blue),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    formattedDate,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildTimePickerTile(
+                                      label: 'Start',
+                                      time: _start,
+                                      onTap: () => _pickTime(isStart: true),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildTimePickerTile(
+                                      label: 'End',
+                                      time: _end,
+                                      onTap: () => _pickTime(isStart: false),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (durationLabel != null) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(Icons.hourglass_bottom,
+                                        color: Colors.orange[400]),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Duration: $durationLabel',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.blueGrey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              DropdownButtonFormField<RepeatFrequency>(
+                                value: _repeatFrequency,
+                                decoration: const InputDecoration(
+                                  labelText: 'Repeat',
+                                  prefixIcon: Icon(Icons.autorenew_outlined),
+                                  filled: true,
+                                ),
+                                items: RepeatFrequency.values
+                                    .map(
+                                      (freq) => DropdownMenuItem<RepeatFrequency>(
+                                        value: freq,
+                                        child: Text(freq.label),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _repeatFrequency = value);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _desc,
+                          minLines: 3,
+                          maxLines: 5,
+                          decoration: const InputDecoration(
+                            labelText: 'Details',
+                            alignLabelWithHint: true,
+                            filled: true,
+                            prefixIcon: Icon(Icons.notes_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(28),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Update'),
+                          onPressed: _saveEvent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD6E6FF),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                'Edit ${_type.label}',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 48),
+        ],      ),
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    return Row(
+      children: EventType.values.map((type) {
+        final isSelected = type == _type;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => setState(() => _type = type),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.blue.shade600
+                        : Colors.blueGrey.shade200,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    type.label.toUpperCase(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isSelected
+                          ? Colors.blue.shade700
+                          : Colors.blueGrey.shade500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildTimePickerTile({
+    required String label,
+    required TimeOfDay? time,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F8FF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.blueGrey[100]!),        ),
+        child: Row(
+          children: [
+            Icon(Icons.schedule_outlined, color: Colors.blueGrey[400]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                time == null ? '${label} time' : time.format(context),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: time == null
+                      ? Colors.blueGrey[300]
+                      : Colors.blueGrey[700],
+                ),
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
+          ],
+        ),
+      ),    );
+  }
+
+  Future<void> _pickTime({required bool isStart}) async {
+    final fallbackEnd = _start != null
+        ? TimeOfDay(
+            hour: (_start!.hour + 1) % 24,
+            minute: _start!.minute,
+          )
+        : const TimeOfDay(hour: 10, minute: 0);
+    final initialTime = isStart
+        ? (_start ?? const TimeOfDay(hour: 9, minute: 0))
+        : (_end ?? fallbackEnd);
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+    if (!mounted) return;
+
+    if (selected != null) {
+      setState(() {
+        if (isStart) {
+          _start = selected;
+          if (_end != null && !_isEndAfterStart(_end!, selected)) {
+            _end = null;
+          }
+        } else {
+          if (_start != null && !_isEndAfterStart(selected, _start!)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('End time must be after the start time.')),
+            );
+            return;
+          }
+          _end = selected;
+        }
+      });
+    }
+  }
+  bool _isEndAfterStart(TimeOfDay end, TimeOfDay start) {
+    final endMinutes = end.hour * 60 + end.minute;
+    final startMinutes = start.hour * 60 + start.minute;
+    return endMinutes > startMinutes;
+  }
+
+  void _saveEvent() {
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a name for this item.')),
+      );
+      return;
+    }
+
+    if (_end != null && _start == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Choose a start time before selecting the end.')),
+      );
+      return;
+    }
+
+    final reminderDuration = kReminderOptions[_reminderLabel];
+
+    final updated = Event(
+      title: title,
+      description: _desc.text.trim(),
+      date: widget.initial.date,
+      startTime: _start,
+      endTime: _end,
+      category: _category,
+      type: _type,
+      reminder: reminderDuration,
+      repeatFrequency: _repeatFrequency,
+    );
+
+    Navigator.of(context).pop(updated);
+  }
+
+    String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours > 0 && minutes > 0) {
+      return '${hours} h ${minutes} m';
+    } else if (hours > 0) {
+      return '${hours} h';
+    }
+    return '${minutes} m';
   }
 
   @override
@@ -1342,163 +2258,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
     _title.dispose();
     _desc.dispose();
     super.dispose();
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    final formattedDate = DateFormat('EEEE, MMMM d').format(widget.initial.date);
-
-    return AlertDialog(
-      title: const Text('Edit Event'),
-      content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: _title,
-            decoration: const InputDecoration(
-              labelText: 'Event Title *',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.title),
-            ),
-            autofocus: true,
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _desc,
-            decoration: const InputDecoration(
-              labelText: 'Description (Optional)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.description_outlined),
-            ),
-            minLines: 1,
-            maxLines: 3,
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _category,
-            decoration: const InputDecoration(
-              labelText: 'Category',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.category_outlined),
-            ),
-            items: const [
-              'General','Work','Personal','Health','Education','Travel','Entertainment'
-            ].map((c)=>DropdownMenuItem(value:c, child: Text(c))).toList(),
-            onChanged: (v)=>setState(()=>_category = v ?? 'General'),
-          ),
-          const SizedBox(height: 16),
-          _timeTile('Start time', _start, () async {
-            final t = await showTimePicker(
-              context: context,
-              initialTime: _start ?? const TimeOfDay(hour: 9, minute: 0),
-            );
-            if (!mounted) return; 
-
-            if (t != null) {
-              setState(() {
-                _start = t;
-                if (_end != null && !_isEndAfterStart(_end!, t)) _end = null;
-              });
-            }
-          }),
-          const SizedBox(height: 12),
-          _timeTile('End time', _end, () async {
-            final t = await showTimePicker(
-              context: context,
-              initialTime: _end ?? const TimeOfDay(hour: 10, minute: 0),
-            );
-            if (t != null) {
-              if (_start != null && !_isEndAfterStart(t, _start!)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('End time must be after the start time.')),
-                );
-                return;
-              }
-              setState(()=>_end = t);
-            }
-          }),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              const Icon(Icons.calendar_today_outlined, color: Colors.blue),
-              const SizedBox(width: 12),
-              Expanded(child: Text('Date: $formattedDate', style: const TextStyle(fontWeight: FontWeight.w600))),
-            ]),
-          ),
-        ]),
-      ),
-      actions: [
-        TextButton(onPressed: ()=>Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(
-          onPressed: () {
-            if (_title.text.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Please enter an event title.')),
-              );
-              return;
-            }
-            Navigator.pop(context, Event(
-              title: _title.text.trim(),
-              description: _desc.text.trim(),
-              date: widget.initial.date,
-              startTime: _start,
-              endTime: _end,
-              category: _category,
-            ));
-          },
-          style: TextButton.styleFrom(
-            backgroundColor: Colors.blue[600],
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-
-  // helpers
-  bool _isEndAfterStart(TimeOfDay end, TimeOfDay start) {
-    final e = end.hour * 60 + end.minute;
-    final s = start.hour * 60 + start.minute;
-    return e > s;
-  }
-
-  Widget _timeTile(String label, TimeOfDay? time, VoidCallback onTap) => InkWell(
-    onTap: onTap, borderRadius: BorderRadius.circular(12),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blueGrey[100]!),
-      ),
-      child: Row(children: [
-        Icon(Icons.schedule_outlined, color: Colors.blueGrey[400]),
-        const SizedBox(width: 12),
-        Expanded(child: Text(
-          time == null ? 'Select $label' : time.format(context),
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: time == null ? Colors.blueGrey[300] : Colors.blueGrey[700],
-          ),
-        )),
-        Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
-      ]),
-    ),
-  );
-}
-
-  class _DateQuery {
-  final int? year, month, day;
-  const _DateQuery({this.year, this.month, this.day});
-  bool matches(DateTime d) {
-    if (year  != null && d.year  != year)  return false;
-    if (month != null && d.month != month) return false;
-    if (day   != null && d.day   != day)   return false;
-    return true;
   }
 }
 
@@ -1571,8 +2330,8 @@ List<Event> _filterEvents(String query) {
     final mDate = dq != null && dq.matches(e.date);
     final mKw = e.title.toLowerCase().contains(lower) ||
         e.description.toLowerCase().contains(lower) ||
-        e.category.toLowerCase().contains(lower);
-
+        e.category.toLowerCase().contains(lower) ||
+        e.type.label.toLowerCase().contains(lower);
     if (mDate && seen.add(e)) dateMatches.add(e);
     if (mKw   && seen.add(e)) keywordMatches.add(e);
   }
@@ -1710,10 +2469,10 @@ List<Widget>? buildActions(BuildContext context) {
       );
       final timeRange =
           '${DateFormat('h:mm a').format(start)} - ${DateFormat('h:mm a').format(end)}';
-      return '$dateLabel · $timeRange · ${event.category}';
+      return '${event.type.label} · $dateLabel · $timeRange · ${event.category}';
     }
 
-    return '$dateLabel · All day · ${event.category}';
+    return '${event.type.label} · $dateLabel · All day · ${event.category}';
   }
 
 DateTime _todayBase() {
@@ -1815,7 +2574,7 @@ _DateQuery? _parseDateQueryLoose(String input) {
       // e.g., "sep 2 2025", "2 sep 2025"
       int? day, month, year;
       for (final t in tokens) {
-        if (month == null) month = pickMonthPrefix(t);
+        month ??= pickMonthPrefix(t);
       }
       for (final t in tokens) {
         if (year == null && RegExp(r'^\d{4}$').hasMatch(t)) year = int.parse(t);
@@ -1824,7 +2583,7 @@ _DateQuery? _parseDateQueryLoose(String input) {
         if (day == null && RegExp(r'^\d{1,2}$').hasMatch(t)) day = int.parse(t);
       }
       year ??= now.year;
-      if (month != null && day != null && _safeDate(year, month!, day!) != null) {
+      if (month != null && day != null && _safeDate(year, month, day) != null) {
         return _DateQuery(year: year, month: month, day: day);
       }
     }
