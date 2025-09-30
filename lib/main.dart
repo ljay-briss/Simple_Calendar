@@ -833,7 +833,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                   ],
                 ),
-          ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -871,12 +871,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
       children: [
         Icon(icon, size: 14, color: Colors.blueGrey[600]),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.blueGrey[700],
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.blueGrey[700],
+            ),
+            softWrap: true,
+            overflow: TextOverflow.visible,
           ),
         ),
       ],
