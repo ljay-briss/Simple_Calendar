@@ -102,6 +102,8 @@ class Event {
   final EventType type;
   final Duration? reminder;
   final RepeatFrequency repeatFrequency;
+  final bool isCompleted;
+
 
   const Event({
     required this.title,
@@ -113,6 +115,7 @@ class Event {
     this.type = EventType.event,
     this.reminder,
     this.repeatFrequency = RepeatFrequency.none,
+    this.isCompleted = false,
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
@@ -128,6 +131,7 @@ class Event {
       'type': type.name,
       'reminderMinutes': reminder?.inMinutes,
       'repeatFrequency': repeatFrequency.name,
+      'isCompleted': isCompleted,
     };
   }
 
@@ -152,6 +156,33 @@ class Event {
       repeatFrequency:
           _repeatFrequencyFromString(map['repeatFrequency'] as String?) ??
               RepeatFrequency.none,
+      isCompleted: _boolFromAny(map['isCompleted']),
+    );
+  }
+
+  Event copyWith({
+    String? title,
+    String? description,
+    DateTime? date,
+    TimeOfDay? startTime,
+    TimeOfDay? endTime,
+    String? category,
+    EventType? type,
+    Duration? reminder,
+    RepeatFrequency? repeatFrequency,
+    bool? isCompleted,
+  }) {
+    return Event(
+      title: title ?? this.title,
+      description: description ?? this.description,
+      date: date ?? this.date,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      category: category ?? this.category,
+      type: type ?? this.type,
+      reminder: reminder ?? this.reminder,
+      repeatFrequency: repeatFrequency ?? this.repeatFrequency,
+      isCompleted: isCompleted ?? this.isCompleted,
     );
   }
 
@@ -197,6 +228,21 @@ class Event {
       }
     }
     return null;
+  }
+
+  static bool _boolFromAny(dynamic value) {
+    if (value is bool) {
+      return value;
+    }
+    if (value is num) {
+      return value != 0;
+    }
+    if (value is String) {
+      final lower = value.toLowerCase();
+      if (lower == 'true') return true;
+      if (lower == 'false') return false;
+    }
+    return false;
   }
 }
 
@@ -750,113 +796,149 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildEventTile(Event event) {
-  final categoryColor = _getCategoryColor(event.category);
-  final timeLabel = event.hasTimeRange
-      ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
-      : 'All day';
-  final typeIcon = event.type == EventType.task
-      ? Icons.check_circle_outline
-      : Icons.event_available_outlined;
-  final typeColor = event.type == EventType.task
-      ? const Color(0xFFF1E8FF)
-      : const Color(0xFFE0F2FF);
-  final chips = <Widget>[
-    _buildInfoChip(typeIcon, event.type.label, background: typeColor),
-    _buildInfoChip(Icons.folder_outlined, event.category,
-        background: const Color(0xFFF1F4FF)),
-    if (event.reminder != null)
-      _buildInfoChip(
-        Icons.notifications_active_outlined,
-        reminderLabelFromDuration(event.reminder),
-        background: const Color(0xFFFFF1E6),
-      ),
-    if (event.repeatFrequency != RepeatFrequency.none)
-      _buildInfoChip(
-        Icons.autorenew_outlined,
-        event.repeatFrequency.label,
-        background: const Color(0xFFE7F8F2),
-      ),
-  ];
+    final categoryColor = _getCategoryColor(event.category);
+    final timeLabel = event.hasTimeRange
+        ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
+        : 'All day';
+    final isTask = event.type == EventType.task;
+    final isCompleted = isTask && event.isCompleted;
+    final typeIcon = isTask
+        ? Icons.check_circle_outline
+        : Icons.event_available_outlined;
+    final typeColor = isTask
+        ? const Color(0xFFF1E8FF)
+        : const Color(0xFFE0F2FF);
+    final titleStyle = TextStyle(
+      fontSize: 22,
+      fontWeight: FontWeight.w800,
+      color: isCompleted ? Colors.blueGrey[400] : Colors.blueGrey[900],
+      decoration: isCompleted ? TextDecoration.lineThrough : null,
+    );
+    final subtitleStyle = TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
+      decoration: isCompleted ? TextDecoration.lineThrough : null,
+    );
+    final descriptionStyle = TextStyle(
+      fontSize: 13,
+      color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
+      decoration: isCompleted ? TextDecoration.lineThrough : null,
+    );
 
-  return InkWell(
-    borderRadius: BorderRadius.circular(20),
-    onTap: () => _showEditEventDialog(event),
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.blueGrey[50]!),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0,6),
-          ),
-        ],
+    final chips = <Widget>[
+      _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+      _buildInfoChip(
+        Icons.folder_outlined,
+        event.category,
+        background: const Color(0xFFF1F4FF),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                margin: const EdgeInsets.only(top: 6, right: 12),
-                decoration: BoxDecoration(
-                  color: categoryColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      event.title,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      timeLabel,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.blueGrey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: chips,
-          ),
-          if (event.description.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              event.description,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.blueGrey[600],
-              ),
+      if (event.reminder != null)
+        _buildInfoChip(
+          Icons.notifications_active_outlined,
+          reminderLabelFromDuration(event.reminder),
+          background: const Color(0xFFFFF1E6),
+        ),
+      if (event.repeatFrequency != RepeatFrequency.none)
+        _buildInfoChip(
+          Icons.autorenew_outlined,
+          event.repeatFrequency.label,
+          background: const Color(0xFFE7F8F2),
+        ),
+      if (isCompleted)
+        _buildInfoChip(
+          Icons.check_circle,
+          'Completed',
+          background: const Color(0xFFE7F8F2),
+        ),
+    ];
+
+    final iconColor = isCompleted ? Colors.green[600] : Colors.blueGrey[300];
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _showEditEventDialog(event),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.blueGrey[50]!),
+          color: isCompleted ? const Color(0xFFF8FAFD) : Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
           ],
-        ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  margin: const EdgeInsets.only(top: 6, right: 12),
+                  decoration: BoxDecoration(
+                    color: categoryColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: titleStyle,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        timeLabel,
+                        style: subtitleStyle,
+                      ),
+                    ],
+                  ),
+                ),
+                if (isTask)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: IconButton(
+                      onPressed: () => _toggleTaskCompletion(event),
+                      icon: Icon(
+                        isCompleted
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                      ),
+                      color: iconColor,
+                      tooltip:
+                          isCompleted ? 'Mark as incomplete' : 'Mark as completed',
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: chips,
+            ),
+            if (event.description.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                event.description,
+                style: descriptionStyle,
+              ),
+            ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
 
   Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
@@ -1116,6 +1198,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
           );
         },
       ),
+    );
+  }
+
+  void _toggleTaskCompletion(Event event) {
+    if (event.type != EventType.task) {
+      return;
+    }
+    final index = _events.indexOf(event);
+    if (index == -1) {
+      return;
+    }
+
+    final toggled = event.copyWith(isCompleted: !event.isCompleted);
+    setState(() {
+      _events[index] = toggled;
+    });
+    unawaited(_persistEvents());
+
+    final message = toggled.isCompleted
+        ? 'Task marked as completed!'
+        : 'Task marked as incomplete.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -1747,6 +1852,7 @@ Widget _buildTypeSelector() {
       type: _selectedType,
       reminder: reminderDuration,
       repeatFrequency: _repeatFrequency,
+      isCompleted: false,
     );
 
     widget.onEventAdded(event);
@@ -2261,6 +2367,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
       type: _type,
       reminder: reminderDuration,
       repeatFrequency: _repeatFrequency,
+      isCompleted: widget.initial.isCompleted,
     );
 
     Navigator.of(context).pop(updated);
@@ -2440,6 +2547,8 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
       padding: const EdgeInsets.symmetric(vertical: 12),
       itemBuilder: (context, index) {
         final event = events[index];
+        final isCompletedTask =
+            event.type == EventType.task && event.isCompleted;
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: Colors.blue[600],
@@ -2447,8 +2556,15 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
             child:
                 Text(event.title.isNotEmpty ? event.title[0].toUpperCase() : '?'),
           ),
-          title: Text(event.title),
-          subtitle: Text(_formatSubtitle(event)),
+          title: Text(
+            event.title,
+            style: isCompletedTask
+                ? const TextStyle(
+                    decoration: TextDecoration.lineThrough,
+                    color: Colors.blueGrey,
+                  )
+                : null,
+          ),          subtitle: Text(_formatSubtitle(event)),
           onTap: () => close(context, event),
         );
       },
@@ -2459,6 +2575,9 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
 
   String _formatSubtitle(Event event) {
     final dateLabel = DateFormat('MMM d, yyyy').format(event.date);
+
+    final completionLabel =
+        event.type == EventType.task && event.isCompleted ? ' · Completed' : '';
 
     if (event.hasTimeRange) {
       final start = DateTime(
@@ -2477,10 +2596,10 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
       );
       final timeRange =
           '${DateFormat('h:mm a').format(start)} - ${DateFormat('h:mm a').format(end)}';
-      return '${event.type.label} · $dateLabel · $timeRange · ${event.category}';
+      return '${event.type.label} · $dateLabel · $timeRange · ${event.category}$completionLabel';
     }
 
-    return '${event.type.label} · $dateLabel · All day · ${event.category}';
+    return '${event.type.label} · $dateLabel · All day · ${event.category}$completionLabel';
   }
 
 }
