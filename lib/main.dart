@@ -338,8 +338,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 padding: const EdgeInsets.only(bottom: 24),
                 child: Column(
                   children: [
+                    const SizedBox(height: 16),
                     _buildCalendarCard(eventsForSelectedDate),
-                    _buildOverviewRow(eventsForSelectedDate, freeSlots),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                      child: _buildFreeTimeOverview(
+                          freeSlots, eventsForSelectedDate),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                      child: _buildDateOverview(eventsForSelectedDate),
+                    ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -702,19 +712,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildOverviewRow(List<Event> events, List<_TimeSlot> freeSlots) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: _buildDateOverview(events)),
-          const SizedBox(width: 16),
-          Expanded(child: _buildFreeTimeOverview(freeSlots, events)),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildDateOverview(List<Event> events) {
     final selectedDateLabel =
@@ -739,7 +737,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     return _OverviewSection(
       title: 'Free time',
-      onShare: _shareFreeTime,
       child: events.isEmpty
           // No events → say "Free all day"
           ? Row(
@@ -786,16 +783,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 
 
-  Widget _buildFreeTimeEmptyMessage(List<Event> events) {
-    if (events.isEmpty) {
-      return const _EmptyOverviewMessage(
-        message: 'Add time blocks to calculate your free time.',
-      );
-    }
-    return const _EmptyOverviewMessage(
-      message: 'No free time detected. Try adjusting your schedule.',
-    );
-  }
+
 
 Widget _buildEventTile(Event event) {
   final categoryColor = _getCategoryColor(event.category);
@@ -1060,18 +1048,7 @@ Widget _buildEventTile(Event event) {
     return buffer.toString();
   }
 
-  void _shareFreeTime() {
-    final freeSlots = _calculateFreeTimeSlots(_getEventsForDate(_selectedDate));
-    final formattedDate = DateFormat('EEEE, MMMM d').format(_selectedDate);
 
-    final summary = freeSlots.isEmpty
-        ? 'No free time available on $formattedDate.'
-        : 'Free time on $formattedDate:\n${freeSlots.map((slot) => '- ${_formatTime(slot.start)} to ${_formatTime(slot.end)}').join('\n')}';
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(summary)),
-    );
-  }
 
   List<Event> _getEventsForDate(DateTime date) {
     final targetDate = DateTime(date.year, date.month, date.day);
@@ -1321,12 +1298,12 @@ class _OverviewSection extends StatelessWidget {
   const _OverviewSection({
     required this.title,
     required this.child,
-    required this.onShare,
+    this.onShare,
   });
 
   final String title;
   final Widget child;
-  final VoidCallback onShare;
+  final VoidCallback? onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -1347,8 +1324,9 @@ class _OverviewSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+            mainAxisAlignment: onShare != null
+                ? MainAxisAlignment.spaceBetween
+                : MainAxisAlignment.start,            children: [
               Text(
                 title,
                 style: const TextStyle(
@@ -1356,11 +1334,12 @@ class _OverviewSection extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              IconButton(
-                onPressed: onShare,
-                icon: const Icon(Icons.ios_share, size: 20),
-                color: Colors.blueGrey[600],
-              ),
+              if (onShare != null)
+                IconButton(
+                  onPressed: onShare,
+                  icon: const Icon(Icons.ios_share, size: 20),
+                  color: Colors.blueGrey[600],
+                ),
             ],
           ),
           const SizedBox(height: 12),
