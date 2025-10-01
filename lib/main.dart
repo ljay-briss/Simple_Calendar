@@ -717,8 +717,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildDateOverview(List<Event> events) {
+    final selectedDateLabel =
+        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
     return _OverviewSection(
-      title: 'Date',
+      title: selectedDateLabel,
       onShare: _shareDaySchedule,
       child: events.isEmpty
           ? const _EmptyOverviewMessage(
@@ -1072,8 +1074,9 @@ Widget _buildEventTile(Event event) {
   }
 
   List<Event> _getEventsForDate(DateTime date) {
+    final targetDate = DateTime(date.year, date.month, date.day);
     return _events
-        .where((event) => _isSameDay(event.date, date))
+        .where((event) => _occursOnDate(event, targetDate))
         .toList()
       ..sort((a, b) {
         if (a.startTime == null && b.startTime == null) return 0;
@@ -1090,6 +1093,46 @@ Widget _buildEventTile(Event event) {
         date1.month == date2.month &&
         date1.day == date2.day;
   }
+
+  bool _occursOnDate(Event event, DateTime date) {
+    final baseDate = DateTime(event.date.year, event.date.month, event.date.day);
+    if (_isSameDay(baseDate, date)) {
+      return true;
+    }
+
+    if (event.repeatFrequency == RepeatFrequency.none || date.isBefore(baseDate)) {
+      return false;
+    }
+
+    final differenceInDays = date.difference(baseDate).inDays;
+
+    switch (event.repeatFrequency) {
+      case RepeatFrequency.daily:
+        return differenceInDays >= 0;
+      case RepeatFrequency.weekly:
+        return differenceInDays >= 0 && differenceInDays % 7 == 0;
+      case RepeatFrequency.monthly:
+        final monthsApart =
+            (date.year - baseDate.year) * 12 + date.month - baseDate.month;
+        if (monthsApart < 0) {
+          return false;
+        }
+        if (_isLastDayOfMonth(baseDate)) {
+          return _isLastDayOfMonth(date);
+        }
+        return date.day == baseDate.day;
+      case RepeatFrequency.none:
+        return _isSameDay(baseDate, date);
+    }
+    return false;
+  }
+
+  bool _isLastDayOfMonth(DateTime date) {
+    final firstOfNextMonth = DateTime(date.year, date.month + 1, 1);
+    final lastOfMonth = firstOfNextMonth.subtract(const Duration(days: 1));
+    return date.day == lastOfMonth.day;
+  }
+
 
   Color _getCategoryColor(String category) {
     switch (category.toLowerCase()) {
@@ -1410,6 +1453,14 @@ class _AddEventDialogState extends State<AddEventDialog> {
   RepeatFrequency _repeatFrequency = RepeatFrequency.none;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final base = widget.selectedDate;
+    _selectedDate = DateTime(base.year, base.month, base.day);
+  }
 
   Duration? get _calculatedDuration {
     if (_startTime == null || _endTime == null) {
@@ -1426,7 +1477,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
   @override
   Widget build(BuildContext context) {
     final formattedDate =
-        DateFormat('EEEE, MMM d, yyyy').format(widget.selectedDate);
+        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
     final durationLabel = _calculatedDuration != null
         ? _formatDuration(_calculatedDuration!)
         : null;
@@ -1490,13 +1541,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
                                   .titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 8),
-                          Text(
-                            formattedDate,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyLarge
-                                ?.copyWith(color: Colors.blueGrey.shade700),
-                          ),
+                          _buildDatePickerTile(formattedDate),
+
                           const SizedBox(height: 20),
                           Row(
                             children: [
@@ -1708,55 +1754,102 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
   }
 
-Widget _buildTypeSelector() {
-  return Row(
-    children: EventType.values.map((type) {
-      final isSelected = type == _selectedType;
-      return Expanded(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: GestureDetector(
-            onTap: () => setState(() => _selectedType = type),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white : Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isSelected
-                      ? Colors.blue.shade600
-                      : Colors.blueGrey.shade200,
-                ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Center(
-                child: Text(
-                  type.label.toUpperCase(),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
+  Widget _buildTypeSelector() {
+    return Row(
+      children: EventType.values.map((type) {
+        final isSelected = type == _selectedType;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedType = type),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
                     color: isSelected
-                        ? Colors.blue.shade700
-                        : Colors.blueGrey.shade500,
+                        ? Colors.blue.shade600
+                        : Colors.blueGrey.shade200,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    type.label.toUpperCase(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isSelected
+                          ? Colors.blue.shade700
+                          : Colors.blueGrey.shade500,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildDatePickerTile(String formattedDate) {
+    return InkWell(
+      onTap: _pickDate,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F8FF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.blueGrey[100]!),
         ),
-      );
-    }).toList(),
-  );
-}
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, color: Colors.blueGrey[400]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                formattedDate,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blueGrey[700],
+                ),
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 10),
+    );
+    if (selected != null) {
+      setState(() {
+        _selectedDate = DateTime(selected.year, selected.month, selected.day);
+      });
+    }
+  }
 
   Widget _buildTimePickerTile({
     required String label,
@@ -1852,8 +1945,9 @@ Widget _buildTypeSelector() {
     if (_endTime != null && _startTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Choose a start time before selecting the end.')),      );
-      return;
+          content: Text('Choose a start time before selecting the end.'),
+        ),
+      );      return;
     }
 
     final reminderDuration = kReminderOptions[_selectedReminderLabel];
@@ -1862,7 +1956,7 @@ Widget _buildTypeSelector() {
     final event = Event(
       title: title,
       description: _descriptionController.text.trim(),
-      date: widget.selectedDate,
+      date: _selectedDate,
       startTime: _startTime,
       endTime: _endTime,
       category: _selectedCategory,
@@ -1912,6 +2006,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
   late RepeatFrequency _repeatFrequency;
   TimeOfDay? _start;
   TimeOfDay? _end;
+  late DateTime _selectedDate;
+
 
   @override
   void initState() {
@@ -1925,6 +2021,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
     _repeatFrequency = init.repeatFrequency;
     _start = init.startTime;
     _end = init.endTime;
+      _selectedDate = DateTime(init.date.year, init.date.month, init.date.day);
   }
 
   Duration? get _calculatedDuration {
@@ -1942,7 +2039,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
   @override
   Widget build(BuildContext context) {
     final formattedDate =
-        DateFormat('EEEE, MMM d, yyyy').format(widget.initial.date);
+        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
     final durationLabel = _calculatedDuration != null
         ? _formatDuration(_calculatedDuration!)
         : null;
@@ -2005,13 +2102,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
                                   .titleMedium
                                   ?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 8),
-                          Text(
-                            formattedDate,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyLarge
-                                ?.copyWith(color: Colors.blueGrey.shade700),
-                          ),
+                          _buildDatePickerTile(formattedDate),
                           const SizedBox(height: 20),
                           Row(
                             children: [
@@ -2273,6 +2364,54 @@ class _EditEventDialogState extends State<EditEventDialog> {
     );
   }
 
+  Widget _buildDatePickerTile(String formattedDate) {
+    return InkWell(
+      onTap: _pickDate,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F8FF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.blueGrey[100]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, color: Colors.blueGrey[400]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                formattedDate,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blueGrey[700],
+                ),
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 10),
+    );
+    if (selected != null) {
+      setState(() {
+        _selectedDate = DateTime(selected.year, selected.month, selected.day);
+      });
+    }
+  }
+
+
   Widget _buildTimePickerTile({
     required String label,
     required TimeOfDay? time,
@@ -2377,7 +2516,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
     final updated = Event(
       title: title,
       description: _desc.text.trim(),
-      date: widget.initial.date,
+      date: _selectedDate,
       startTime: _start,
       endTime: _end,
       category: _category,
