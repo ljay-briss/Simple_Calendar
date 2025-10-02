@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
+
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -1463,6 +1465,9 @@ Widget _buildEventTile(Event event) {
 
 
   Widget _buildBottomNavigationBar() {
+    final textScaleFactor = MediaQuery.textScaleFactorOf(context);
+    final estimatedMinHeight = 24 + 4 + (12 * textScaleFactor) + 16;
+    final minHeight = math.max(64.0, estimatedMinHeight);
     return SafeArea(
       top: false,
       child: BottomAppBar(
@@ -1470,11 +1475,12 @@ Widget _buildEventTile(Event event) {
         notchMargin: 10,
         color: Colors.white,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: SizedBox(
-            height: 64,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _buildBottomNavItem(
                     Icons.calendar_today, 'Calendar', HomeTab.calendar),
@@ -1508,7 +1514,7 @@ Widget _buildEventTile(Event event) {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: color),
             const SizedBox(height: 4),
