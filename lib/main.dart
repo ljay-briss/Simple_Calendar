@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum EventType { event, task }
+enum EventType { event, task, note }
 
 extension EventTypeExtension on EventType {
   String get label {
@@ -14,6 +14,8 @@ extension EventTypeExtension on EventType {
         return 'Event';
       case EventType.task:
         return 'Task';
+      case EventType.note:
+        return 'Note';
     }
   }
 }
@@ -34,6 +36,8 @@ extension RepeatFrequencyExtension on RepeatFrequency {
     }
   }
 }
+
+enum HomeTab { calendar, notes, daily }
 
 const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   'No reminder': null,
@@ -246,6 +250,98 @@ class Event {
   }
 }
 
+class NoteEntry {
+  final String title;
+  final String description;
+  final String category;
+  final DateTime? date;
+  final DateTime createdAt;
+  final bool addedToCalendar;
+
+  const NoteEntry({
+    required this.title,
+    required this.description,
+    required this.category,
+    this.date,
+    required this.createdAt,
+    this.addedToCalendar = false,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'title': title,
+      'description': description,
+      'category': category,
+      'date': date?.toIso8601String(),
+      'createdAt': createdAt.toIso8601String(),
+      'addedToCalendar': addedToCalendar,
+    };
+  }
+
+  factory NoteEntry.fromMap(Map<String, dynamic> map) {
+    DateTime? parsedDate;
+    final dateValue = map['date'];
+    if (dateValue is String && dateValue.isNotEmpty) {
+      try {
+        parsedDate = DateTime.parse(dateValue);
+      } catch (_) {
+        parsedDate = null;
+      }
+    }
+
+    DateTime createdAt;
+    final createdAtValue = map['createdAt'];
+    if (createdAtValue is String) {
+      try {
+        createdAt = DateTime.parse(createdAtValue);
+      } catch (_) {
+        createdAt = DateTime.now();
+      }
+    } else {
+      createdAt = DateTime.now();
+    }
+
+    final addedToCalendarValue = map['addedToCalendar'];
+
+    return NoteEntry(
+      title: (map['title'] as String?) ?? '',
+      description: (map['description'] as String?) ?? '',
+      category: (map['category'] as String?) ?? 'General',
+      date: parsedDate,
+      createdAt: createdAt,
+      addedToCalendar: addedToCalendarValue is bool
+          ? addedToCalendarValue
+          : Event._boolFromAny(addedToCalendarValue),
+    );
+  }
+
+  NoteEntry copyWith({
+    String? title,
+    String? description,
+    String? category,
+    DateTime? date,
+    DateTime? createdAt,
+    bool? addedToCalendar,
+  }) {
+    return NoteEntry(
+      title: title ?? this.title,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      date: date ?? this.date,
+      createdAt: createdAt ?? this.createdAt,
+      addedToCalendar: addedToCalendar ?? this.addedToCalendar,
+    );
+  }
+}
+
+class NoteResult {
+  final NoteEntry note;
+  final Event? calendarEvent;
+
+  const NoteResult({required this.note, this.calendarEvent});
+}
+
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -257,11 +353,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _selectedDate = DateTime.now();
   DateTime _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
   final List<Event> _events = [];
+  final List<NoteEntry> _notes = [];
   bool _showIntroCard = true;
+  HomeTab _currentTab = HomeTab.calendar;
+
 
   SharedPreferences? _cachedPrefs;
   static const String _eventsStorageKey = 'calendar_events';
   static const String _introCardStorageKey = 'calendar_intro_card';
+  static const String _notesStorageKey = 'calendar_notes';
 
   static const int _dayStartHour = 8;
   static const int _dayEndHour = 20;
@@ -292,6 +392,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
     }
 
+    final storedNotes = prefs.getStringList(_notesStorageKey) ?? [];
+    final loadedNotes = <NoteEntry>[];
+    for (final jsonString in storedNotes) {
+      try {
+        final decoded = jsonDecode(jsonString);
+        if (decoded is Map<String, dynamic>) {
+          loadedNotes.add(NoteEntry.fromMap(decoded));
+        }
+      } catch (_) {
+        // Ignore malformed entries.
+      }
+    }
+
     final showIntroPref = prefs.getBool(_introCardStorageKey);
 
     if (!mounted) return;
@@ -299,6 +412,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events
         ..clear()
         ..addAll(loadedEvents);
+      _notes
+        ..clear()
+        ..addAll(loadedNotes);
       _showIntroCard = showIntroPref ?? _events.isEmpty;
     });
   }
@@ -307,6 +423,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final prefs = await _getPrefs();
     final encoded = _events.map((event) => jsonEncode(event.toMap())).toList();
     await prefs.setStringList(_eventsStorageKey, encoded);
+  }
+
+  Future<void> _persistNotes() async {
+    final prefs = await _getPrefs();
+    final encoded = _notes.map((note) => jsonEncode(note.toMap())).toList();
+    await prefs.setStringList(_notesStorageKey, encoded);
   }
 
   Future<void> _persistIntroCard(bool value) async {
@@ -321,51 +443,395 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_persistEvents());
   }
 
+  void _handleNoteAdded(NoteEntry note, {Event? linkedEvent}) {
+    setState(() {
+      _notes.add(note);
+    });
+    unawaited(_persistNotes());
+
+    if (linkedEvent != null) {
+      _handleEventAdded(linkedEvent);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final eventsForSelectedDate = _getEventsForDate(_selectedDate);
     final freeSlots = _calculateFreeTimeSlots(eventsForSelectedDate);
 
     return Scaffold(
-       backgroundColor: const Color(0xFFF5F7FB),
+      backgroundColor: const Color(0xFFF5F7FB),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(),
-            _buildMonthHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-                    _buildCalendarCard(eventsForSelectedDate),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                      child: _buildFreeTimeOverview(
-                          freeSlots, eventsForSelectedDate),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                      child: _buildDateOverview(eventsForSelectedDate),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+        child: _currentTab == HomeTab.calendar
+            ? _buildCalendarBody(eventsForSelectedDate, freeSlots)
+            : _buildNotesBody(),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddEventDialog,
-        backgroundColor: Colors.blue[600],
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: _buildFloatingActionButton(),
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
+
+  Widget _buildCalendarBody(
+      List<Event> eventsForSelectedDate, List<_TimeSlot> freeSlots) {
+    return Column(
+      children: [
+        _buildTopBar(),
+        _buildMonthHeader(),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 16),
+                _buildCalendarCard(eventsForSelectedDate),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: _buildFreeTimeOverview(freeSlots, eventsForSelectedDate),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: _buildDateOverview(eventsForSelectedDate),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotesBody() {
+    final sections = <Widget>[];
+
+    void addCategory(String category) {
+      final categoryEvents = _events
+          .where((event) => event.category.toLowerCase() == category.toLowerCase())
+          .toList()
+        ..sort((a, b) {
+          final primary = a.date.compareTo(b.date);
+          if (primary != 0) return primary;
+          final aStart = a.startTime?.hour ?? 0;
+          final bStart = b.startTime?.hour ?? 0;
+          if (aStart != bStart) return aStart.compareTo(bStart);
+          final aMinute = a.startTime?.minute ?? 0;
+          final bMinute = b.startTime?.minute ?? 0;
+          return aMinute.compareTo(bMinute);
+        });
+
+      final categoryNotes = _notes
+          .where((note) => note.category.toLowerCase() == category.toLowerCase())
+          .toList()
+        ..sort((a, b) {
+          final aDate = a.date ?? a.createdAt;
+          final bDate = b.date ?? b.createdAt;
+          return aDate.compareTo(bDate);
+        });
+
+      if (categoryEvents.isEmpty && categoryNotes.isEmpty) {
+        return;
+      }
+
+      sections.add(_buildNotesCategoryCard(category, categoryEvents, categoryNotes));
+    }
+
+    for (final category in kEventCategories) {
+      addCategory(category);
+    }
+
+    final knownCategories =
+        kEventCategories.map((category) => category.toLowerCase()).toSet();
+    final customCategories = <String>{
+      ..._events
+          .map((event) => event.category)
+          .where((category) =>
+              !knownCategories.contains(category.toLowerCase())),
+      ..._notes
+          .map((note) => note.category)
+          .where((category) =>
+              !knownCategories.contains(category.toLowerCase())),
+    }.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    for (final category in customCategories) {
+      addCategory(category);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildNotesTopBar(),
+        Expanded(
+          child: sections.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      'Add a note, task, or event to see it organized here by category.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: sections,
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotesTopBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Text(
+            'Notes',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: Colors.blueGrey[900],
+            ),
+          ),
+          const Spacer(),
+          _buildIconButton(Icons.search, _showEventSearch),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotesCategoryCard(
+    String category,
+    List<Event> events,
+    List<NoteEntry> notes,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.folder_outlined, color: Colors.blueGrey[500]),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  category,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '${events.length + notes.length}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blueGrey[400],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (events.isNotEmpty)
+            ...[for (final event in events) _buildNotesEventTile(event)],
+          if (events.isNotEmpty && notes.isNotEmpty)
+            const Divider(height: 24, thickness: 0.6),
+          if (notes.isNotEmpty)
+            ...[for (final note in notes) _buildNotesNoteTile(note)],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotesEventTile(Event event) {
+    final isTask = event.type == EventType.task;
+    final isNote = event.type == EventType.note;
+    final icon = isTask
+        ? Icons.check_circle_outline
+        : isNote
+            ? Icons.sticky_note_2_outlined
+            : Icons.event_outlined;
+    final iconColor = isTask
+        ? Colors.deepPurple[300]
+        : isNote
+            ? Colors.amber[600]
+            : Colors.blue[400];
+
+    final subtitleParts = <String>[];
+    subtitleParts.add(DateFormat('MMM d, yyyy').format(event.date));
+    if (event.hasTimeRange) {
+      subtitleParts.add(
+          '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}');
+    } else if (!isNote) {
+      subtitleParts.add('All day');
+    } else {
+      subtitleParts.add('Note');
+    }
+    subtitleParts.add(event.type.label);
+    final subtitle = subtitleParts.join(' • ');
+
+    final titleStyle = TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.w700,
+      color: isTask && event.isCompleted
+          ? Colors.blueGrey[400]
+          : Colors.blueGrey[900],
+      decoration:
+          isTask && event.isCompleted ? TextDecoration.lineThrough : null,
+    );
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _showEditEventDialog(event),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.white,
+          border: Border.all(color: Colors.blueGrey[50]!),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: iconColor?.withOpacity(0.12) ?? Colors.blue.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(event.title, style: titleStyle),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.blueGrey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (event.description.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      event.description,
+                      style: TextStyle(
+                        color: Colors.blueGrey[400],
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (isTask)
+              Checkbox(
+                value: event.isCompleted,
+                onChanged: (_) => _toggleTaskCompletion(event),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              )
+            else
+              Icon(Icons.chevron_right, color: Colors.blueGrey[200]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotesNoteTile(NoteEntry note) {
+    final subtitleParts = <String>[];
+    if (note.date != null) {
+      subtitleParts.add(DateFormat('MMM d, yyyy').format(note.date!));
+    }
+    subtitleParts.add('Note');
+    if (note.addedToCalendar) {
+      subtitleParts.add('On calendar');
+    }
+
+    final subtitle = subtitleParts.join(' • ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFFFFFBF2),
+        border: Border.all(color: Colors.amber[100]!),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.amber[200],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.sticky_note_2, color: Color(0xFF8D6E63), size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  note.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.blueGrey[500],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (note.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    note.description,
+                    style: TextStyle(
+                      color: Colors.blueGrey[500],
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   Future<void> _showEditEventDialog(Event oldEvent) async {
     final edited = await showDialog<Event>(
@@ -733,12 +1199,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildFreeTimeOverview(List<_TimeSlot> freeSlots, List<Event> events) {
-    final hasAllDayEvent = events.any((event) => !event.hasTimeRange);
+    final eventsAffectingTime =
+        events.where((event) => event.type != EventType.note).toList();
+    final hasAllDayEvent =
+        eventsAffectingTime.any((event) => !event.hasTimeRange);
 
     return _OverviewSection(
       title: 'Free time',
-      child: events.isEmpty
-          // No events → say "Free all day"
+      child: eventsAffectingTime.isEmpty
+          // No events that block time → say "Free all day"
           ? Row(
               children: [
                 Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
@@ -792,12 +1261,21 @@ Widget _buildEventTile(Event event) {
       : 'All day';
 
   final isTask = event.type == EventType.task;
+  final isNote = event.type == EventType.note;
   final isCompleted = isTask && event.isCompleted;
 
-  final typeIcon =
-      isTask ? Icons.check_circle_outline : Icons.event_available_outlined;
-  final typeColor =
-      isTask ? const Color(0xFFF1E8FF) : const Color(0xFFE0F2FF);
+  final IconData typeIcon;
+  final Color typeColor;
+  if (isTask) {
+    typeIcon = Icons.check_circle_outline;
+    typeColor = const Color(0xFFF1E8FF);
+  } else if (isNote) {
+    typeIcon = Icons.sticky_note_2_outlined;
+    typeColor = const Color(0xFFFFF4D9);
+  } else {
+    typeIcon = Icons.event_available_outlined;
+    typeColor = const Color(0xFFE0F2FF);
+  }
 
   final titleStyle = TextStyle(
     fontSize: 20,
@@ -841,7 +1319,11 @@ Widget _buildEventTile(Event event) {
       ),
   ];
 
-  final iconColor = isCompleted ? Colors.green[600] : Colors.blueGrey[300];
+  final iconColor = isCompleted
+      ? Colors.green[600]
+      : isNote
+          ? Colors.amber[700]
+          : Colors.blueGrey[300];
 
   return InkWell(
     borderRadius: BorderRadius.circular(20),
@@ -990,33 +1472,68 @@ Widget _buildEventTile(Event event) {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildBottomNavItem(Icons.calendar_today, 'Calendar', true),
-            _buildBottomNavItem(Icons.note_outlined, 'Notes', false),
+            _buildBottomNavItem(Icons.calendar_today, 'Calendar', HomeTab.calendar),
+            _buildBottomNavItem(Icons.note_outlined, 'Notes', HomeTab.notes),
             const SizedBox(width: 48),
-            _buildBottomNavItem(Icons.view_day_outlined, 'Daily', false),
+            _buildBottomNavItem(Icons.view_day_outlined, 'Daily', HomeTab.daily),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBottomNavItem(IconData icon, String label, bool isActive) {
+  Widget _buildBottomNavItem(IconData icon, String label, HomeTab tab) {
+    final isActive = _currentTab == tab;
     final color = isActive ? Colors.blue[600] : Colors.blueGrey[400];
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, color: color),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-            color: color,
-          ),
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        if (tab == HomeTab.daily) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Daily view coming soon!')),
+          );
+          return;
+        }
+        setState(() => _currentTab = tab);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
+  }
+
+  Widget? _buildFloatingActionButton() {
+    switch (_currentTab) {
+      case HomeTab.calendar:
+        return FloatingActionButton(
+          onPressed: _showAddEventDialog,
+          backgroundColor: Colors.blue[600],
+          child: const Icon(Icons.add, color: Colors.white),
+        );
+      case HomeTab.notes:
+        return FloatingActionButton(
+          onPressed: _showAddNoteDialog,
+          backgroundColor: Colors.orange[500],
+          child: const Icon(Icons.note_add, color: Colors.white),
+        );
+      case HomeTab.daily:
+        return null;
+    }
   }
 
   void _shareDaySchedule() {
@@ -1131,8 +1648,10 @@ Widget _buildEventTile(Event event) {
   }
 
   List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events) {
-    if (events.any((event) => !event.hasTimeRange)) {
-      return [];
+    final blockingEvents =
+        events.where((event) => event.type != EventType.note).toList();
+
+    if (blockingEvents.any((event) => !event.hasTimeRange)) {      return [];
     }
 
     final dayStart = DateTime(
@@ -1148,7 +1667,7 @@ Widget _buildEventTile(Event event) {
       _dayEndHour,
     );
 
-    final scheduled = events
+    final scheduled = blockingEvents
         .where((event) => event.hasTimeRange)
         .map(
           (event) => _TimeSlot(
@@ -1236,6 +1755,27 @@ Widget _buildEventTile(Event event) {
         },
       ),
     );
+  }
+
+  Future<void> _showAddNoteDialog() async {
+    final result = await showDialog<NoteResult>(
+      context: context,
+      builder: (context) => AddNoteDialog(
+        initialDate: _selectedDate,
+      ),
+    );
+
+    if (result != null) {
+      _handleNoteAdded(result.note, linkedEvent: result.calendarEvent);
+      final message = result.calendarEvent != null
+          ? 'Note saved and added to your calendar!'
+          : 'Note saved.';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    }
   }
 
   void _toggleTaskCompletion(Event event) {
@@ -1409,6 +1949,296 @@ class _TimeSlot {
   Duration get duration => end.difference(start);
 }
 
+class AddNoteDialog extends StatefulWidget {
+  const AddNoteDialog({this.initialDate, super.key});
+
+  final DateTime? initialDate;
+
+  @override
+  State<AddNoteDialog> createState() => _AddNoteDialogState();
+}
+
+class _AddNoteDialogState extends State<AddNoteDialog> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _descriptionController;
+  String _selectedCategory = kEventCategories.first;
+  DateTime? _selectedDate;
+  bool _addToCalendar = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController();
+    _descriptionController = TextEditingController();
+    if (widget.initialDate != null) {
+      final d = widget.initialDate!;
+      _selectedDate = DateTime(d.year, d.month, d.day);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final dateLabel = _selectedDate != null
+        ? DateFormat('EEE, MMM d, yyyy').format(_selectedDate!)
+        : 'Choose a date';
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF4E5),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  color: const Color(0xFFFFE1BB),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'New Note',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(20, 24, 20, 24 + viewInsets),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: _titleController,
+                          decoration: const InputDecoration(
+                            labelText: 'Title *',
+                            filled: true,
+                            prefixIcon: Icon(Icons.short_text),
+                          ),
+                          autofocus: true,
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          value: _selectedCategory,
+                          decoration: const InputDecoration(
+                            labelText: 'Category',
+                            prefixIcon: Icon(Icons.folder_outlined),
+                            filled: true,
+                          ),
+                          items: kEventCategories
+                              .map(
+                                (category) => DropdownMenuItem<String>(
+                                  value: category,
+                                  child: Text(category),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _selectedCategory = value);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        SwitchListTile.adaptive(
+                          title: const Text('Add to calendar'),
+                          subtitle: const Text(
+                              'Adds this note to your schedule as an all-day item.'),
+                          value: _addToCalendar,
+                          onChanged: (value) {
+                            setState(() {
+                              _addToCalendar = value;
+                              if (value) {
+                                final base = _selectedDate ??
+                                    widget.initialDate ??
+                                    DateTime.now();
+                                _selectedDate = DateTime(
+                                  base.year,
+                                  base.month,
+                                  base.day,
+                                );
+                              } else {
+                                _selectedDate = null;
+                              }
+                            });
+                          },
+                        ),
+                        if (_addToCalendar) ...[
+                          const SizedBox(height: 8),
+                          _buildDateSelector(dateLabel),
+                        ],
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _descriptionController,
+                          minLines: 3,
+                          maxLines: 5,
+                          decoration: const InputDecoration(
+                            labelText: 'Details',
+                            alignLabelWithHint: true,
+                            filled: true,
+                            prefixIcon: Icon(Icons.notes_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      bottom: Radius.circular(28),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.check),
+                          label: const Text('Save'),
+                          onPressed: _save,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateSelector(String dateLabel) {
+    return InkWell(
+      onTap: _pickDate,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7EB),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.orange[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_outlined, color: Colors.orange[600]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                dateLabel,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.orange[800],
+                ),
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down, color: Colors.orange[400]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? widget.initialDate ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (selected != null) {
+      setState(() {
+        _selectedDate = DateTime(selected.year, selected.month, selected.day);
+      });
+    }
+  }
+
+  void _save() {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add a title for this note.')),
+      );
+      return;
+    }
+
+    if (_addToCalendar && _selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a date to add this note to the calendar.')),
+      );
+      return;
+    }
+
+    final note = NoteEntry(
+      title: title,
+      description: _descriptionController.text.trim(),
+      category: _selectedCategory,
+      date: _addToCalendar ? _selectedDate : null,
+      createdAt: DateTime.now(),
+      addedToCalendar: _addToCalendar,
+    );
+
+    Event? calendarEvent;
+    if (_addToCalendar && _selectedDate != null) {
+      calendarEvent = Event(
+        title: title,
+        description: _descriptionController.text.trim(),
+        date: _selectedDate!,
+        category: _selectedCategory,
+        type: EventType.note,
+        reminder: null,
+        repeatFrequency: RepeatFrequency.none,
+        isCompleted: false,
+      );
+    }
+
+    Navigator.of(context).pop(NoteResult(note: note, calendarEvent: calendarEvent));
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+}
+
 class AddEventDialog extends StatefulWidget {
   const AddEventDialog({
     required this.selectedDate,
@@ -1554,7 +2384,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           ],
                           const SizedBox(height: 20),
                           DropdownButtonFormField<RepeatFrequency>(
-                            value: _repeatFrequency,
+                            initialValue: _repeatFrequency,
                             decoration: const InputDecoration(
                               labelText: 'Repeat',
                               prefixIcon: Icon(Icons.repeat_outlined),
@@ -1634,7 +2464,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
 
   Widget _buildReminderAndCategoryFields() {
     final reminderField = DropdownButtonFormField<String>(
-      value: _selectedReminderLabel,
+      initialValue: _selectedReminderLabel,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Notification',
@@ -1656,7 +2486,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
 
     final categoryField = DropdownButtonFormField<String>(
-      value: _selectedCategory,
+      initialValue: _selectedCategory,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Add to',
@@ -1734,8 +2564,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
   }
 
   Widget _buildTypeSelector() {
+      final types = EventType.values.where((type) => type != EventType.note).toList();
     return Row(
-      children: EventType.values.map((type) {
+      children: types.map((type) {
         final isSelected = type == _selectedType;
         return Expanded(
           child: Padding(
@@ -2114,7 +2945,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
                           ],
                           const SizedBox(height: 20),
                           DropdownButtonFormField<RepeatFrequency>(
-                            value: _repeatFrequency,
+                            initialValue: _repeatFrequency,
                             decoration: const InputDecoration(
                               labelText: 'Repeat',
                               prefixIcon: Icon(Icons.repeat_outlined),
@@ -2194,7 +3025,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
 
   Widget _buildReminderAndCategoryFields() {
     final reminderField = DropdownButtonFormField<String>(
-      value: _reminderLabel,
+      initialValue: _reminderLabel,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Notification',
@@ -2216,7 +3047,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
     );
 
     final categoryField = DropdownButtonFormField<String>(
-      value: _category,
+      initialValue: _category,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Add to',
@@ -2514,7 +3345,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
     if (hours > 0 && minutes > 0) {
       return '$hours h $minutes m';
     } else if (hours > 0) {
-      return '${hours} h';
+      return '$hours h';
     }
     return '$minutes m';
   }
