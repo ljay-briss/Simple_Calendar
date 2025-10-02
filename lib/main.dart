@@ -1463,20 +1463,29 @@ Widget _buildEventTile(Event event) {
 
 
   Widget _buildBottomNavigationBar() {
-    return BottomAppBar(
-      shape: const CircularNotchedRectangle(),
-      notchMargin: 10,
-      color: Colors.white,
-      child: SizedBox(
-        height: 64,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildBottomNavItem(Icons.calendar_today, 'Calendar', HomeTab.calendar),
-            _buildBottomNavItem(Icons.note_outlined, 'Notes', HomeTab.notes),
-            const SizedBox(width: 48),
-            _buildBottomNavItem(Icons.view_day_outlined, 'Daily', HomeTab.daily),
-          ],
+    return SafeArea(
+      top: false,
+      child: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 10,
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: SizedBox(
+            height: 64,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildBottomNavItem(
+                    Icons.calendar_today, 'Calendar', HomeTab.calendar),
+                _buildBottomNavItem(
+                    Icons.note_outlined, 'Notes', HomeTab.notes),
+                const SizedBox(width: 48),
+                _buildBottomNavItem(
+                    Icons.view_day_outlined, 'Daily', HomeTab.daily),
+              ],
+            ),
+          ),
         ),
       ),
     );
