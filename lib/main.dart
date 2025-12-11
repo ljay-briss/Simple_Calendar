@@ -2057,7 +2057,9 @@ Widget _buildEventTile(Event event) {
     );
   }
 
-  void _handleAddTap() {    switch (_currentTab) {
+  void _handleAddTap() {
+    switch (_currentTab) {      
+      
       case HomeTab.calendar:
 
       case HomeTab.daily:
@@ -2065,7 +2067,8 @@ Widget _buildEventTile(Event event) {
         break;
       case HomeTab.notes:
         _showAddNoteDialog();
-        break;    }
+        break;    
+        }
   }
 
   void _shareDaySchedule() {
@@ -2946,7 +2949,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
                             ),
                           ),
                         ],
-                      ),
+                      ],
 
                         const SizedBox(height: 20),
                         DropdownButtonFormField<RepeatFrequency>(
@@ -3292,7 +3295,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: time == null
+                  color: !enabled
                       ? Colors.blueGrey[300]
                       : Colors.blueGrey[700],
                 ),
@@ -3549,37 +3552,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
                                   ?.copyWith(color: Colors.blueGrey.shade600),
                             ),
                           ],
-                          const SizedBox(height: 20),
-                          DropdownButtonFormField<RepeatFrequency>(
-                            initialValue: _repeatFrequency,
-                            decoration: const InputDecoration(
-                              labelText: 'Repeat',
-                              prefixIcon: Icon(Icons.repeat_outlined),
-                              filled: true,
-                            ),
-                            items: RepeatFrequency.values
-                                .map(
-                                  (freq) => DropdownMenuItem<RepeatFrequency>(
-                                    value: freq,
-                                    child: Text(freq.label),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              if (value == null) return;
-                              setState(() => _repeatFrequency = value);
-                            },
-                          ),
-                          const SizedBox(height: 20),
-                          TextField(
-                            controller: _desc,
-                            minLines: 3,
-                            maxLines: 5,
-                            decoration: const InputDecoration(
-                              labelText: 'Details',
-                              alignLabelWithHint: true,
-                              filled: true,
-                              prefixIcon: Icon(Icons.notes_outlined),
                             ),
                           ),
                         ],
@@ -3783,15 +3755,12 @@ class _EditEventDialogState extends State<EditEventDialog> {
   Widget _buildDatePickerTile(String formattedDate) {
     return InkWell(
       onTap: _pickDate,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
           color: const Color(0xFFF5F7FA),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: enabled ? Colors.transparent : Colors.blueGrey.shade100,
-          ),
         ),
         child: Row(
           children: [
@@ -3834,16 +3803,19 @@ class _EditEventDialogState extends State<EditEventDialog> {
     required String label,
     required TimeOfDay? time,
     required VoidCallback onTap,
+    bool enabled = true,
   }) {
     return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F8FF),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blueGrey[100]!),
+          color: const Color(0xFFF5F7FA),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: enabled ? Colors.transparent : Colors.blueGrey.shade100,
+          ),
         ),
         child: Row(
           children: [
