@@ -464,12 +464,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FB),
       body: SafeArea(
-        child: _currentTab == HomeTab.calendar
-            ? _buildCalendarBody(eventsForSelectedDate, freeSlots)
-            : _buildNotesBody(),
+        child: switch (_currentTab) {
+          HomeTab.calendar => _buildCalendarBody(eventsForSelectedDate, freeSlots),
+          HomeTab.notes => _buildNotesBody(),
+          HomeTab.daily => _buildDailyBody(eventsForSelectedDate),
+        },
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: _buildFloatingActionButton(),
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
@@ -503,6 +503,251 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ],
     );
   }
+
+  Widget _buildDailyBody(List<Event> eventsForSelectedDate) {
+    final sortedEvents = List<Event>.from(eventsForSelectedDate)
+      ..sort((a, b) {
+        final aStart = a.startTime ?? const TimeOfDay(hour: 0, minute: 0);
+        final bStart = b.startTime ?? const TimeOfDay(hour: 0, minute: 0);
+        final hourComparison = aStart.hour.compareTo(bStart.hour);
+        if (hourComparison != 0) return hourComparison;
+        return aStart.minute.compareTo(bStart.minute);
+      });
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Row(
+            children: [
+              _buildCircularIconButton(Icons.arrow_back_ios_new, () {
+                setState(() {
+                  _selectedDate = _selectedDate.subtract(const Duration(days: 1));
+                });
+              }),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      DateFormat('MMMM d, yyyy').format(_selectedDate),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat('EEEE').format(_selectedDate),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blueGrey[500],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildCircularIconButton(Icons.arrow_forward_ios_rounded, () {
+                setState(() {
+                  _selectedDate = _selectedDate.add(const Duration(days: 1));
+                });
+              }),
+              const SizedBox(width: 12),
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.blue[50],
+                child: Icon(Icons.person, color: Colors.blue[700]),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Column(
+              children: [
+                _buildDailyTimeline(sortedEvents),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDailyTimeline(List<Event> events) {
+    const startHour = 5;
+    const endHour = 23;
+    const hourHeight = 72.0;
+    final totalHours = endHour - startHour + 1;
+    final timelineHeight = totalHours * hourHeight;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A2C3A4B),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: SizedBox(
+          height: timelineHeight,
+          child: Stack(
+            children: [
+              Column(
+                children: List.generate(totalHours, (index) {
+                  final hour = startHour + index;
+                  return SizedBox(
+                    height: hourHeight,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 70,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              _formatHourLabel(hour),
+                              style: TextStyle(
+                                color: Colors.blueGrey[400],
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 12),
+                              Container(
+                                height: 1,
+                                color: const Color(0xFFE8EEF6),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+              ...events.map((event) {
+                final start = event.startTime ?? const TimeOfDay(hour: startHour, minute: 0);
+                final end = event.endTime ??
+                    TimeOfDay(
+                      hour: math.min(start.hour + 1, endHour),
+                      minute: start.minute,
+                    );
+
+                final startMinutes = ((start.hour - startHour) * 60) + start.minute;
+                final endMinutes = ((end.hour - startHour) * 60) + end.minute;
+                final clampedStart = math.max(0, startMinutes);
+                final clampedEnd = math.max(clampedStart + 45, math.min(endMinutes, (endHour - startHour + 1) * 60));
+
+                final top = (clampedStart / 60) * hourHeight;
+                final height = ((clampedEnd - clampedStart) / 60) * hourHeight;
+
+                return Positioned(
+                  top: top,
+                  left: 78,
+                  right: 16,
+                  child: Container(
+                    height: height,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F0FF),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFD0E0FF)),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                event.category,
+                                style: TextStyle(
+                                  color: Colors.blue[800],
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            if (event.type == EventType.event)
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.event,
+                                  size: 16,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          event.title,
+                          style: TextStyle(
+                            color: Colors.blueGrey[900],
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _formatEventTimeRange(start, end),
+                          style: TextStyle(
+                            color: Colors.blueGrey[600],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatHourLabel(int hour) {
+    final time = TimeOfDay(hour: hour, minute: 0);
+    return time.format(context).toUpperCase();
+  }
+
+  String _formatEventTimeRange(TimeOfDay start, TimeOfDay end) {
+    final startTime = DateTime(0, 1, 1, start.hour, start.minute);
+    final endTime = DateTime(0, 1, 1, end.hour, end.minute);
+    final startLabel = DateFormat.jm().format(startTime);
+    final endLabel = DateFormat.jm().format(endTime);
+    return '$startLabel - $endLabel';
+  }
+
 
   Widget _buildNotesBody() {
     final sections = <Widget>[];
@@ -931,6 +1176,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
   }
+
+  Widget _buildCircularIconButton(IconData icon, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1A2C3A4B),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Icon(icon, size: 18, color: Colors.blueGrey[800]),
+      ),
+    );
+  }
+
 
   Widget _buildMonthHeader() {
     final monthLabel = DateFormat('MMMM yyyy').format(_currentMonth);
@@ -1470,25 +1738,42 @@ Widget _buildEventTile(Event event) {
     final minHeight = math.max(64.0, estimatedMinHeight);
     return SafeArea(
       top: false,
-      child: BottomAppBar(
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 10,
-        color: Colors.white,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              crossAxisAlignment: CrossAxisAlignment.center,
+
               children: [
-                _buildBottomNavItem(
-                    Icons.calendar_today, 'Calendar', HomeTab.calendar),
-                _buildBottomNavItem(
-                    Icons.note_outlined, 'Notes', HomeTab.notes),
-                const SizedBox(width: 48),
-                _buildBottomNavItem(
-                    Icons.view_day_outlined, 'Daily', HomeTab.daily),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _buildBottomNavItem(
+                          Icons.calendar_today, 'Calendar', HomeTab.calendar),
+                      _buildBottomNavItem(
+                          Icons.note_outlined, 'Notes', HomeTab.notes),
+                      _buildBottomNavItem(
+                          Icons.view_day_outlined, 'Daily', HomeTab.daily),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _buildAddButton(),
               ],
             ),
           ),
@@ -1499,20 +1784,14 @@ Widget _buildEventTile(Event event) {
 
   Widget _buildBottomNavItem(IconData icon, String label, HomeTab tab) {
     final isActive = _currentTab == tab;
-    final color = isActive ? Colors.blue[600] : Colors.blueGrey[400];
+    final color = isActive ? Colors.blue[600] : Colors.blueGrey[300];
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () {
-        if (tab == HomeTab.daily) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Daily view coming soon!')),
-          );
-          return;
-        }
         setState(() => _currentTab = tab);
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1522,7 +1801,7 @@ Widget _buildEventTile(Event event) {
               label,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
                 color: color,
               ),
             ),
@@ -1532,23 +1811,31 @@ Widget _buildEventTile(Event event) {
     );
   }
 
-  Widget? _buildFloatingActionButton() {
-    switch (_currentTab) {
+  Widget _buildAddButton() {
+    return InkWell(
+      onTap: _handleAddTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: Colors.blue[600],
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
+      ),
+    );
+  }
+
+  void _handleAddTap() {    switch (_currentTab) {
       case HomeTab.calendar:
-        return FloatingActionButton(
-          onPressed: _showAddEventDialog,
-          backgroundColor: Colors.blue[600],
-          child: const Icon(Icons.add, color: Colors.white),
-        );
-      case HomeTab.notes:
-        return FloatingActionButton(
-          onPressed: _showAddNoteDialog,
-          backgroundColor: Colors.orange[500],
-          child: const Icon(Icons.note_add, color: Colors.white),
-        );
+
       case HomeTab.daily:
-        return null;
-    }
+        _showAddEventDialog();
+        break;
+      case HomeTab.notes:
+        _showAddNoteDialog();
+        break;    }
   }
 
   void _shareDaySchedule() {
@@ -2060,7 +2347,7 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
                         ),
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
-                          value: _selectedCategory,
+                          initialValue: _selectedCategory,
                           decoration: const InputDecoration(
                             labelText: 'Category',
                             prefixIcon: Icon(Icons.folder_outlined),
