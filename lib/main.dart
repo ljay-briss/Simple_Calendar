@@ -2835,13 +2835,13 @@ class _AddEventDialogState extends State<AddEventDialog> {
     return Duration(minutes: endMinutes - startMinutes);
   }
 
-@override
-Widget build(BuildContext context) {
-  final formattedDate =
-      DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
-  final durationLabel = _calculatedDuration != null
-      ? _formatDuration(_calculatedDuration!)
-      : null;
+  @override
+  Widget build(BuildContext context) {
+    final formattedDate =
+        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
+    final durationLabel = _calculatedDuration != null
+        ? _formatDuration(_calculatedDuration!)
+        : null;
 
   final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
@@ -2909,25 +2909,22 @@ Widget build(BuildContext context) {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildSectionLabel('Title'),
+                      const SizedBox(height: 6),
                       TextField(
                         controller: _titleController,
                         decoration: _inputDecoration(
-                          label: 'Title *',
-                          icon: Icons.edit_outlined,
+                          label: 'Add a title',
                         ),
                         autofocus: true,
                       ),
-                      const SizedBox(height: 16),
-                      _buildReminderAndCategoryFields(),
                       const SizedBox(height: 20),
-                      _buildSectionLabel('Date'),
+                      _buildSectionLabel('Start'),
                       const SizedBox(height: 8),
-                      _buildDatePickerTile(formattedDate),
-                      const SizedBox(height: 16),
-                      _buildAllDayToggle(),
-                      const SizedBox(height: 12),
                       Row(
                         children: [
+                          Expanded(child: _buildDatePickerTile(formattedDate)),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: _buildTimePickerTile(
                               label: 'Start',
@@ -2936,6 +2933,14 @@ Widget build(BuildContext context) {
                               enabled: !_isAllDay,
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _buildSectionLabel('End'),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: _buildDatePickerTile(formattedDate)),
                           const SizedBox(width: 12),
                           Expanded(
                             child: _buildTimePickerTile(
@@ -2948,7 +2953,7 @@ Widget build(BuildContext context) {
                         ],
                       ),
                       if (durationLabel != null && !_isAllDay) ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
                         Text(
                           'Duration: $durationLabel',
                           style: TextStyle(
@@ -2957,12 +2962,13 @@ Widget build(BuildContext context) {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 12),
+                      _buildAllDayToggle(),
                       const SizedBox(height: 20),
                       DropdownButtonFormField<RepeatFrequency>(
                         initialValue: _repeatFrequency,
                         decoration: _inputDecoration(
                           label: 'Repeat',
-                          icon: Icons.repeat_outlined,
                         ),
                         items: RepeatFrequency.values
                             .map(
@@ -2977,7 +2983,11 @@ Widget build(BuildContext context) {
                           setState(() => _repeatFrequency = value);
                         },
                       ),
+                      const SizedBox(height: 16),
+                      _buildReminderAndCategoryFields(),
                       const SizedBox(height: 20),
+                      _buildSectionLabel('Description'),
+                      const SizedBox(height: 6),
                       TextField(
                         controller: _descriptionController,
                         minLines: 3,
@@ -2988,7 +2998,7 @@ Widget build(BuildContext context) {
                           alignLabelWithHint: true,
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       _buildCategoryChips(),
                     ],
                   ),
@@ -3035,7 +3045,6 @@ Widget build(BuildContext context) {
       isExpanded: true,
       decoration: _inputDecoration(
         label: 'Reminder',
-        icon: Icons.notifications_outlined,
       ),
       items: kReminderOptions.keys
           .map(
@@ -3055,36 +3064,48 @@ Widget build(BuildContext context) {
   }
 
   Widget _buildAllDayToggle() {
-    return InkWell(
-      onTap: () => setState(() {
-        _isAllDay = !_isAllDay;
-        if (_isAllDay) {
-          _startTime = null;
-          _endTime = null;
-        }
-      }),
-      borderRadius: BorderRadius.circular(12),
-      child: Row(
-        children: [
-          Checkbox(
-            value: _isAllDay,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            onChanged: (value) {
-              setState(() {
-                _isAllDay = value ?? false;
-                if (_isAllDay) {
-                  _startTime = null;
-                  _endTime = null;
-                }
-              });
-            },
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => setState(() {
+          _isAllDay = !_isAllDay;
+          if (_isAllDay) {
+            _startTime = null;
+            _endTime = null;
+          }
+        }),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F8FA),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blueGrey.shade100!),
           ),
-          const SizedBox(width: 8),
-          const Text(
-            'All-day',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          child: Row(
+            children: [
+              Checkbox(
+                value: _isAllDay,
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                onChanged: (value) {
+                  setState(() {
+                    _isAllDay = value ?? false;
+                    if (_isAllDay) {
+                      _startTime = null;
+                      _endTime = null;
+                    }
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'All-day',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -3154,8 +3175,13 @@ Widget build(BuildContext context) {
 
   Widget _buildSectionLabel(String text) {
     return Text(
-      text,
-      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.6,
+        color: Colors.blueGrey.shade500,
+      ),
     );
   }
 
@@ -3174,22 +3200,26 @@ Widget build(BuildContext context) {
     return InputDecoration(
       labelText: label,
       alignLabelWithHint: alignLabelWithHint,
+      labelStyle: TextStyle(
+        color: Colors.blueGrey.shade400,
+        fontWeight: FontWeight.w600,
+      ),
       filled: true,
-      fillColor: const Color(0xFFF5F7FA),
-      prefixIcon: icon != null ? Icon(icon) : null,
+      fillColor: const Color(0xFFF7F8FA),
+      prefixIcon: icon != null ? Icon(icon, color: Colors.blueGrey[400]) : null,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.blueGrey.shade100!),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.blueGrey.shade100!),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Colors.blue),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     );
   }
 
@@ -3238,8 +3268,9 @@ Widget build(BuildContext context) {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F7FA),
-          borderRadius: BorderRadius.circular(14),
+          color: const Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueGrey.shade100!),
         ),
         child: Row(
           children: [
@@ -3290,9 +3321,9 @@ Widget build(BuildContext context) {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F8FF),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blueGrey[100]!),
+          color: const Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueGrey.shade100!),
         ),
         child: Row(
           children: [
@@ -3472,9 +3503,9 @@ Widget build(BuildContext context) {
       ? _formatDuration(_calculatedDuration!)
       : null;
 
-  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
-  return Dialog(
+    return Dialog(
     backgroundColor: Colors.transparent,
     insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
     child: ConstrainedBox(
