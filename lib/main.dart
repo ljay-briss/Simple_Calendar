@@ -514,6 +514,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         return aStart.minute.compareTo(bStart.minute);
       });
 
+    final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
+
+
     return Column(
       children: [
         Padding(
@@ -568,8 +571,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: Column(
               children: [
-                _buildDailyTimeline(sortedEvents),
-              ],
+                _buildDailySummary(sortedEvents, isToday),
+                const SizedBox(height: 12),
+                _buildDailyTimeline(sortedEvents, isToday),              ],
             ),
           ),
         ),
@@ -577,12 +581,148 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildDailyTimeline(List<Event> events) {
-    const startHour = 5;
+  Widget _buildDailySummary(List<Event> eventsForSelectedDate, bool isToday) {
+    final eventCount = eventsForSelectedDate.length;
+    final scheduledHours = eventsForSelectedDate.fold<double>(0, (sum, event) {
+      if (event.startTime == null || event.endTime == null) return sum + 1;
+      final startMinutes = (event.startTime!.hour * 60) + event.startTime!.minute;
+      final endMinutes = (event.endTime!.hour * 60) + event.endTime!.minute;
+      final durationMinutes = (endMinutes - startMinutes).clamp(30, 180);
+      return sum + (durationMinutes / 60).toDouble();
+    });
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFEDF3FF), Color(0xFFE4ECFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD8E3FF)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1A2C3A4B),
+                  blurRadius: 12,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Icon(
+              isToday ? Icons.wb_sunny_rounded : Icons.calendar_today_rounded,
+              color: Colors.blue[700],
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      isToday ? 'Today' : DateFormat('EEEE').format(_selectedDate),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.blueGrey[900],
+                      ),
+                    ),
+                    if (isToday) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Live',
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${DateFormat('MMMM d, yyyy').format(_selectedDate)} • $eventCount item${eventCount == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    color: Colors.blueGrey[500],
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _buildSummaryChip(Icons.schedule, '${scheduledHours.toStringAsFixed(1)} hrs'),
+                    const SizedBox(width: 8),
+                    _buildSummaryChip(Icons.check_circle_outline, '$eventCount scheduled'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDCE6F6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.blueGrey[600]),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.blueGrey[700],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailyTimeline(List<Event> events, bool isToday) {    const startHour = 5;
     const endHour = 23;
     const hourHeight = 72.0;
     final totalHours = endHour - startHour + 1;
     final timelineHeight = totalHours * hourHeight;
+
+    final now = DateTime.now();
+    final totalMinutes = (endHour - startHour + 1) * 60;
+    final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
+    final showNowLine =
+        isToday && nowMinutes >= 0 && nowMinutes <= totalMinutes && totalMinutes > 0;
+    final nowTop = ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight;
 
     return Container(
       decoration: BoxDecoration(
@@ -614,12 +754,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           width: 70,
                           child: Padding(
                             padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              _formatHourLabel(hour),
-                              style: TextStyle(
-                                color: Colors.blueGrey[400],
-                                fontWeight: FontWeight.w700,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _formatHourLabel(hour),
+                                  style: TextStyle(
+                                    color: Colors.blueGrey[400],
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                if (isToday && hour == now.hour)
+                                  Container(
+                                    margin: const EdgeInsets.only(top: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red[50],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      'Current hour',
+                                      style: TextStyle(
+                                        color: Colors.red[700],
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ),
@@ -639,6 +804,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   );
                 }),
               ),
+              if (showNowLine)
+                Positioned(
+                  top: nowTop,
+                  left: 70,
+                  right: 0,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.red[600],
+                          shape: BoxShape.circle,
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1AF44336),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          height: 2,
+                          color: Colors.red[400],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x142C3A4B),
+                              blurRadius: 10,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          DateFormat.jm().format(now),
+                          style: TextStyle(
+                            color: Colors.red[600],
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                    ],
+                  ),
+                ),
               ...events.map((event) {
                 final start = event.startTime ?? const TimeOfDay(hour: startHour, minute: 0);
                 final end = event.endTime ??
@@ -662,8 +886,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   child: Container(
                     height: height,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE8F0FF),
-                      borderRadius: BorderRadius.circular(14),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8F0FF), Color(0xFFDCE7FF)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: const Color(0xFFD0E0FF)),
                     ),
                     padding: const EdgeInsets.all(12),
@@ -689,19 +916,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               ),
                             ),
                             const Spacer(),
-                            if (event.type == EventType.event)
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.event,
-                                  size: 16,
-                                  color: Colors.blue[700],
-                                ),
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
                               ),
+                              child: Icon(
+                                switch (event.type) {
+                                  EventType.task => Icons.checklist_rounded,
+                                  EventType.note => Icons.sticky_note_2_outlined,
+                                  _ => Icons.event,
+                                },
+                                size: 16,
+                                color: Colors.blue[700],
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
