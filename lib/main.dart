@@ -1481,12 +1481,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       height: 340,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -1562,128 +1562,145 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildWeekdayHeader() {
-    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return Row(
-      children: weekdays
-          .map(
-            (day) => Expanded(
-              child: Center(
-                child: Text(
-                  day,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.blueGrey[400],
-                  ),
-                ),
+Widget _buildWeekdayHeader() {
+  const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    child: Row(
+      children: List.generate(7, (i) {
+        return Expanded(
+          child: Center(
+            child: Text(
+              labels[i],
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.blueGrey[500],
               ),
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
-    final daysInMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
-    final firstDayOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
-    final startingWeekday = firstDayOfMonth.weekday % 7; // Sunday = 0
-
-    return GridView.builder(
-      padding: EdgeInsets.zero,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-      ),
-      itemCount: 42,
-      itemBuilder: (context, index) {
-        final dayIndex = index - startingWeekday + 1;
-        if (dayIndex < 1 || dayIndex > daysInMonth) {
-          return const SizedBox.shrink();
-        }
-
-        final date = DateTime(_currentMonth.year, _currentMonth.month, dayIndex);
-        final isSelected = _isSameDay(date, _selectedDate);
-        final isToday = _isSameDay(date, DateTime.now());
-        final hasEvents = _getEventsForDate(date).isNotEmpty;
-
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedDate = date;
-            });
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Colors.blue[600]
-                  : isToday
-                      ? Colors.blue[50]
-                      : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelected
-                    ? Colors.blue[600]!
-                    : hasEvents
-                        ? Colors.orange[300]!
-                        : Colors.blueGrey[50]!,
-                width: isSelected ? 2 : 1,
-              ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.25),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Stack(
-              children: [
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8, right: 10),
-                    child: Text(
-                      dayIndex.toString(),
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isSelected
-                            ? Colors.white
-                            : isToday
-                                ? Colors.blue[700]
-                                : Colors.blueGrey[700],
-                      ),
-                    ),
-                  ),
-                ),
-                if (hasEvents)
-                  Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 12, bottom: 10),
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: isSelected ? Colors.white : Colors.orange[600],
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-
-                  ),
-              ],
             ),
           ),
         );
-      },
-    );
-  }
+      }),
+    ),
+  );
+}
+
+
+Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
+  final firstOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
+
+  // weekday: Mon=1..Sun=7, we want Sun=0..Sat=6
+  final startOffset = firstOfMonth.weekday % 7;
+  final gridStart = firstOfMonth.subtract(Duration(days: startOffset));
+
+  return GridView.builder(
+    padding: EdgeInsets.zero,
+    physics: const NeverScrollableScrollPhysics(),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 7,
+      mainAxisSpacing: 0,
+      crossAxisSpacing: 0,
+      childAspectRatio: 1.25, // tweak if you want taller cells
+    ),
+    itemCount: 42,
+    itemBuilder: (context, index) {
+      final date = DateTime(gridStart.year, gridStart.month, gridStart.day + index);
+
+      final isInMonth = date.month == _currentMonth.month;
+      final isSelected = _isSameDay(date, _selectedDate);
+      final isToday = _isSameDay(date, DateTime.now());
+
+      final dayEvents = _getEventsForDate(date);
+      final hasEvents = dayEvents.isNotEmpty;
+
+      // Draw thin grid lines like the reference
+      final isLastCol = (index % 7) == 6;
+      final isLastRow = index >= 35;
+
+      return InkWell(
+        onTap: () {
+          setState(() => _selectedDate = date);
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.blue.withOpacity(0.08) // subtle selected cell wash
+                : Colors.white,
+            border: Border(
+              right: isLastCol
+                  ? BorderSide.none
+                  : BorderSide(color: Colors.blueGrey.shade100, width: 1),
+              bottom: isLastRow
+                  ? BorderSide.none
+                  : BorderSide(color: Colors.blueGrey.shade100, width: 1),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Day number row with selected circle
+              Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected
+                          ? Colors.blue[600]
+                          : Colors.transparent,
+                    ),
+                    child: Text(
+                      '${date.day}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isSelected
+                            ? Colors.white
+                            : !isInMonth
+                                ? Colors.blueGrey[300]
+                                : isToday
+                                    ? Colors.blue[700]
+                                    : Colors.blueGrey[800],
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+
+              // Event chip like the reference ("Welco...")
+              if (hasEvents)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[600],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    dayEvents.first.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 
 
 
