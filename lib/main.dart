@@ -1478,7 +1478,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      height: 340,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -1490,20 +1489,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-            child: Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Calculate the needed grid height based on width so cells always fit.
+          const horizontalPadding = 16.0;
+          const verticalPadding = 20.0;
+          const spacingBelowHeader = 10.0;
+          const weekdayHeaderHeight = 26.0;
+          final contentWidth = constraints.maxWidth - (horizontalPadding * 2);
+          final cellWidth = contentWidth / 7;
+          final cellHeight = cellWidth / 1.32; // childAspectRatio adjustment
+          final gridHeight = cellHeight * 6;
+
+          return SizedBox(
+            height:
+                gridHeight + (verticalPadding * 2) + spacingBelowHeader + weekdayHeaderHeight,
+            child: Stack(
               children: [
-                _buildWeekdayHeader(),
-                const SizedBox(height: 12),
-                Expanded(child: _buildCalendarGrid(eventsForSelectedDate)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      horizontalPadding, verticalPadding, horizontalPadding, verticalPadding),
+                  child: Column(
+                    children: [
+                      _buildWeekdayHeader(),
+                      const SizedBox(height: spacingBelowHeader),
+                      Expanded(child: _buildCalendarGrid(eventsForSelectedDate)),
+                    ],
+                  ),
+                ),
+                if (_showIntroCard) _buildIntroOverlay(),
               ],
             ),
-          ),
-          if (_showIntroCard) _buildIntroOverlay(),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1596,12 +1614,13 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
 
   return GridView.builder(
     padding: EdgeInsets.zero,
+    shrinkWrap: true,
     physics: const NeverScrollableScrollPhysics(),
     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
       crossAxisCount: 7,
       mainAxisSpacing: 0,
       crossAxisSpacing: 0,
-      childAspectRatio: 1.25, // tweak if you want taller cells
+      childAspectRatio: 1.2, // tweak if you want taller cells
     ),
     itemCount: 42,
     itemBuilder: (context, index) {
@@ -1636,7 +1655,7 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
                   : BorderSide(color: Colors.blueGrey.shade100, width: 1),
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
