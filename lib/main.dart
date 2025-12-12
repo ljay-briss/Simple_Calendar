@@ -2491,6 +2491,151 @@ class _TimeSlot {
   Duration get duration => end.difference(start);
 }
 
+String _eventTypeLabel(EventType type) {
+  return type == EventType.note ? 'Time Off' : type.label;
+}
+
+Widget _sectionLabel(String text) {
+  return Text(
+    text.toUpperCase(),
+    style: TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.6,
+      color: Colors.blueGrey.shade500,
+    ),
+  );
+}
+
+InputDecoration _sharedInputDecoration({
+  required String label,
+  IconData? icon,
+  bool alignLabelWithHint = false,
+}) {
+  return InputDecoration(
+    labelText: label,
+    alignLabelWithHint: alignLabelWithHint,
+    labelStyle: TextStyle(
+      color: Colors.blueGrey.shade400,
+      fontWeight: FontWeight.w600,
+    ),
+    filled: true,
+    fillColor: const Color(0xFFF7F8FA),
+    prefixIcon: icon != null ? Icon(icon, color: Colors.blueGrey[400]) : null,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.blueGrey.shade100!),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.blueGrey.shade100!),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Colors.blue),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+  );
+}
+
+class _EventTypeTabs extends StatelessWidget {
+  const _EventTypeTabs({
+    required this.selected,
+    required this.onSelected,
+    super.key,
+  });
+
+  final EventType selected;
+  final ValueChanged<EventType> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: EventType.values.map((type) {
+        final isSelected = type == selected;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => onSelected(type),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.blue.shade600
+                        : Colors.blueGrey.shade200,
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    _eventTypeLabel(type).toUpperCase(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isSelected
+                          ? Colors.blue.shade700
+                          : Colors.blueGrey.shade500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _DialogHeader extends StatelessWidget {
+  const _DialogHeader({required this.title, super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD6E6FF),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close),
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 48),
+        ],
+      ),
+    );
+  }
+}
+
 class AddNoteDialog extends StatefulWidget {
   const AddNoteDialog({this.initialDate, super.key});
 
@@ -2842,209 +2987,182 @@ class _AddEventDialogState extends State<AddEventDialog> {
     final durationLabel = _calculatedDuration != null
         ? _formatDuration(_calculatedDuration!)
         : null;
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
-  final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-
-  return Dialog(
-    backgroundColor: Colors.transparent,
-    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // header
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Expanded(child: _buildTypeSelector()),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9F2FF),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
               ),
-            ),
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _typeLabel(_selectedType),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _DialogHeader(title: _eventTypeLabel(_selectedType)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: _EventTypeTabs(
+                    selected: _selectedType,
+                    onSelected: (type) => setState(() => _selectedType = type),
                   ),
                 ),
-              ),
-            ),
-            Divider(color: Colors.blueGrey.shade100, height: 1),
-
-            // body
-            Flexible(
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    20,
-                    16,
-                    20,
-                    20 + viewInsets,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionLabel('Title'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _titleController,
-                        decoration: _inputDecoration(
-                          label: 'Add a title',
-                        ),
-                        autofocus: true,
+                Divider(color: Colors.blueGrey.shade100, height: 24),
+                Flexible(
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        0,
+                        20,
+                        24 + viewInsets,
                       ),
-                      const SizedBox(height: 20),
-                      _buildSectionLabel('Start'),
-                      const SizedBox(height: 8),
-                      Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(child: _buildDatePickerTile(formattedDate)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTimePickerTile(
-                              label: 'Start',
-                              time: _startTime,
-                              onTap: () => _pickTime(isStart: true),
-                              enabled: !_isAllDay,
+                          _sectionLabel('Name'),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: _titleController,
+                            decoration: _sharedInputDecoration(
+                              label: 'Name *',
+                              icon: Icons.edit_outlined,
                             ),
+                            autofocus: true,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSectionLabel('End'),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(child: _buildDatePickerTile(formattedDate)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTimePickerTile(
-                              label: 'End',
-                              time: _endTime,
-                              onTap: () => _pickTime(isStart: false),
-                              enabled: !_isAllDay,
+                          const SizedBox(height: 16),
+                          _buildReminderAndCategoryFields(),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Date'),
+                          const SizedBox(height: 8),
+                          _buildDatePickerTile(formattedDate),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<RepeatFrequency>(
+                            initialValue: _repeatFrequency,
+                            decoration: _sharedInputDecoration(
+                              label: 'Repeat',
+                              icon: Icons.refresh_outlined,
                             ),
+                            items: RepeatFrequency.values
+                                .map(
+                                  (freq) => DropdownMenuItem<RepeatFrequency>(
+                                    value: freq,
+                                    child: Text(freq.label),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _repeatFrequency = value);
+                            },
                           ),
-                        ],
-                      ),
-                      if (durationLabel != null && !_isAllDay) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          'Duration: $durationLabel',
-                          style: TextStyle(
-                            color: Colors.blueGrey.shade600,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      _buildAllDayToggle(),
-                      const SizedBox(height: 20),
-                      DropdownButtonFormField<RepeatFrequency>(
-                        initialValue: _repeatFrequency,
-                        decoration: _inputDecoration(
-                          label: 'Repeat',
-                        ),
-                        items: RepeatFrequency.values
-                            .map(
-                              (freq) => DropdownMenuItem<RepeatFrequency>(
-                                value: freq,
-                                child: Text(freq.label),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Time'),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'Start',
+                                  time: _startTime,
+                                  onTap: () => _pickTime(isStart: true),
+                                  enabled: !_isAllDay,
+                                ),
                               ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setState(() => _repeatFrequency = value);
-                        },
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'End',
+                                  time: _endTime,
+                                  onTap: () => _pickTime(isStart: false),
+                                  enabled: !_isAllDay,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (durationLabel != null && !_isAllDay) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Duration: $durationLabel',
+                              style: TextStyle(
+                                color: Colors.blueGrey.shade600,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          _buildAllDayToggle(),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Details'),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: _descriptionController,
+                            minLines: 3,
+                            maxLines: 5,
+                            decoration: _sharedInputDecoration(
+                              label: 'Details',
+                              icon: Icons.notes_outlined,
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      _buildReminderAndCategoryFields(),
-                      const SizedBox(height: 20),
-                      _buildSectionLabel('Description'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _descriptionController,
-                        minLines: 3,
-                        maxLines: 5,
-                        decoration: _inputDecoration(
-                          label: 'Description',
-                          icon: Icons.notes_outlined,
-                          alignLabelWithHint: true,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: _saveEvent,
+                          child: const Text('Save'),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      _buildCategoryChips(),
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
-
-            // footer buttons
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Row(
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: _saveEvent,
-                      child: const Text('Save'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
 
   Widget _buildReminderAndCategoryFields() {
     final reminderField = DropdownButtonFormField<String>(
       initialValue: _selectedReminderLabel,
       isExpanded: true,
-      decoration: _inputDecoration(
-        label: 'Reminder',
+      decoration: _sharedInputDecoration(
+        label: 'Notification',
+        icon: Icons.notifications_outlined,
       ),
       items: kReminderOptions.keys
           .map(
@@ -3059,8 +3177,50 @@ class _AddEventDialogState extends State<AddEventDialog> {
         setState(() => _selectedReminderLabel = value);
       },
     );
+    final categoryField = DropdownButtonFormField<String>(
+    initialValue: _selectedCategory,
+    isExpanded: true,
+    decoration: _sharedInputDecoration(
+       label: 'Add to',
+      icon: Icons.folder_outlined,
+    ),
+    items: _categoryOptions
+        .map(
+          (category) => DropdownMenuItem<String>(
+            value: category,
+            child: Text(category),
+          ),
+        )
+        .toList(),
+    onChanged: (value) {
+      if (value == null) return;
+      setState(() => _selectedCategory = value);
+     },
+  );
 
-    return reminderField;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 16.0;
+        final isNarrow = constraints.maxWidth < 380;
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              reminderField,
+              const SizedBox(height: spacing),
+              categoryField,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: reminderField),
+            const SizedBox(width: spacing),
+            Expanded(child: categoryField),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildAllDayToggle() {
@@ -3110,156 +3270,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
   }
 
-  Widget _buildCategoryChips() {
-    const iconMap = <String, IconData>{
-      'Work': Icons.work_outline,
-      'School': Icons.school_outlined,
-      'Sport': Icons.fitness_center_outlined,
-      'Personal': Icons.person_outline,
-      'Family': Icons.family_restroom_outlined,
-      'Other': Icons.category_outlined,
-    };
-
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel('Category'),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: _categoryOptions.map((category) {
-            final isSelected = category == _selectedCategory;
-            return ChoiceChip(
-              label: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (iconMap[category] != null) ...[
-                    Icon(
-                      iconMap[category],
-                      size: 18,
-                      color: isSelected ? Colors.white : Colors.blueGrey.shade600,
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  Text(
-                    category,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color:
-                          isSelected ? Colors.white : Colors.blueGrey.shade700,
-                    ),
-                  ),
-                ],
-              ),
-              selected: isSelected,
-              selectedColor: Colors.blue,
-              showCheckmark: false,
-              backgroundColor: const Color(0xFFF5F7FA),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: isSelected
-                      ? Colors.blue
-                      : Colors.blueGrey.shade200,
-                ),
-              ),
-              onSelected: (_) => setState(() => _selectedCategory = category),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.6,
-        color: Colors.blueGrey.shade500,
-      ),
-    );
-  }
-
-  String _typeLabel(EventType type) {
-    if (type == EventType.note) {
-      return 'Time Off';
-    }
-    return type.label;
-  }
-
-  InputDecoration _inputDecoration({
-    required String label,
-    IconData? icon,
-    bool alignLabelWithHint = false,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      alignLabelWithHint: alignLabelWithHint,
-      labelStyle: TextStyle(
-        color: Colors.blueGrey.shade400,
-        fontWeight: FontWeight.w600,
-      ),
-      filled: true,
-      fillColor: const Color(0xFFF7F8FA),
-      prefixIcon: icon != null ? Icon(icon, color: Colors.blueGrey[400]) : null,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.blueGrey.shade100!),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.blueGrey.shade100!),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Colors.blue),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-    );
-  }
-
-  Widget _buildTypeSelector() {
-    final types = EventType.values.where((type) => type != EventType.note).toList()
-      ..add(EventType.note);    return Row(
-      children: types.map((type) {
-        final isSelected = type == _selectedType;
-        return Expanded(
-          child: InkWell(
-            onTap: () => setState(() => _selectedType = type),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _typeLabel(type),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: isSelected
-                        ? Colors.blue.shade700
-                        : Colors.blueGrey.shade500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 3,
-                  width: 48,
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.blue : Colors.transparent,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
+ 
 
   Widget _buildDatePickerTile(String formattedDate) {
     return InkWell(
@@ -3495,163 +3506,195 @@ class _EditEventDialogState extends State<EditEventDialog> {
     return Duration(minutes: endMinutes - startMinutes);
   }
 
-@override
-Widget build(BuildContext context) {
-  final formattedDate =
-      DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
-  final durationLabel = _calculatedDuration != null
-      ? _formatDuration(_calculatedDuration!)
-      : null;
-
+  @override
+  Widget build(BuildContext context) {
+    final formattedDate =
+        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
+    final durationLabel = _calculatedDuration != null
+        ? _formatDuration(_calculatedDuration!)
+        : null;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
     return Dialog(
-    backgroundColor: Colors.transparent,
-    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 420),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFE9F2FF),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              _buildHeader(context),
-              Expanded(
-                child: SafeArea(
-                  top: false,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      20,
-                      24,
-                      20,
-                      24 + viewInsets,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTypeSelector(),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _title,
-                          decoration: const InputDecoration(
-                            labelText: 'Name *',
-                            filled: true,
-                            prefixIcon: Icon(Icons.edit_outlined),
-                          ),
-                          autofocus: true,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildReminderAndCategoryFields(),
-                        const SizedBox(height: 20),
-                        Text(
-                          'Date',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildDatePickerTile(formattedDate),
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTimePickerTile(
-                                label: 'Start',
-                                time: _start,
-                                onTap: () => _pickTime(isStart: true),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildTimePickerTile(
-                                label: 'End',
-                                time: _end,
-                                onTap: () => _pickTime(isStart: false),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (durationLabel != null) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            'Duration: $durationLabel',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: Colors.blueGrey.shade600,
-                                ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(28),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 12,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.icon(
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Update'),
-                        onPressed: _saveEvent,
-                      ),
-                    ),
-                  ],
-                ),
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9F2FF),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                _DialogHeader(title: 'Edit ${_eventTypeLabel(_type)}'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: _EventTypeTabs(
+                    selected: _type,
+                    onSelected: (type) => setState(() => _type = type),
+                  ),
+                ),
+                Divider(color: Colors.blueGrey.shade100, height: 24),
+                Expanded(
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        0,
+                        20,
+                        24 + viewInsets,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _sectionLabel('Name'),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: _title,
+                            decoration: _sharedInputDecoration(
+                              label: 'Name *',
+                              icon: Icons.edit_outlined,
+                            ),
+                            autofocus: true,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildReminderAndCategoryFields(),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Date'),
+                          const SizedBox(height: 8),
+                          _buildDatePickerTile(formattedDate),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<RepeatFrequency>(
+                            initialValue: _repeatFrequency,
+                            decoration: _sharedInputDecoration(
+                              label: 'Repeat',
+                              icon: Icons.refresh_outlined,
+                            ),
+                            items: RepeatFrequency.values
+                                .map(
+                                  (freq) => DropdownMenuItem<RepeatFrequency>(
+                                    value: freq,
+                                    child: Text(freq.label),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _repeatFrequency = value);
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Time'),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'Start',
+                                  time: _start,
+                                  onTap: () => _pickTime(isStart: true),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildTimePickerTile(
+                                  label: 'End',
+                                  time: _end,
+                                  onTap: () => _pickTime(isStart: false),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (durationLabel != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Duration: $durationLabel',
+                              style: TextStyle(
+                                color: Colors.blueGrey.shade600,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          _sectionLabel('Details'),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: _desc,
+                            minLines: 3,
+                            maxLines: 5,
+                            decoration: _sharedInputDecoration(
+                              label: 'Details',
+                              icon: Icons.notes_outlined,
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(28),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Update'),
+                          onPressed: _saveEvent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
 
   Widget _buildReminderAndCategoryFields() {
     final reminderField = DropdownButtonFormField<String>(
       initialValue: _reminderLabel,
       isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Notification',
-        prefixIcon: Icon(Icons.notifications_outlined),
-        filled: true,
+      decoration: _sharedInputDecoration(
+        label: 'Notification',
+        icon: Icons.notifications_outlined,
       ),
       items: kReminderOptions.keys
           .map(
@@ -3670,10 +3713,9 @@ Widget build(BuildContext context) {
     final categoryField = DropdownButtonFormField<String>(
       initialValue: _category,
       isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Add to',
-        prefixIcon: Icon(Icons.folder_outlined),
-        filled: true,
+      decoration: _sharedInputDecoration(
+        label: 'Add to',
+        icon: Icons.folder_outlined,
       ),
       items: kEventCategories
           .map(
@@ -3715,85 +3757,6 @@ Widget build(BuildContext context) {
   }
 
 
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFD6E6FF),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close),
-          ),
-          Expanded(
-            child: Center(
-              child: Text(
-                'Edit ${_type.label}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTypeSelector() {
-    return Row(
-      children: EventType.values.map((type) {
-        final isSelected = type == _type;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: GestureDetector(
-              onTap: () => setState(() => _type = type),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected
-                        ? Colors.blue.shade600
-                        : Colors.blueGrey.shade200,
-                  ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Center(
-                  child: Text(
-                    type.label.toUpperCase(),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: isSelected
-                          ? Colors.blue.shade700
-                          : Colors.blueGrey.shade500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
 
   Widget _buildDatePickerTile(String formattedDate) {
     return InkWell(
@@ -3802,8 +3765,9 @@ Widget build(BuildContext context) {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F7FA),
-          borderRadius: BorderRadius.circular(14),
+          color: const Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueGrey.shade100!),
         ),
         child: Row(
           children: [
@@ -3854,11 +3818,9 @@ Widget build(BuildContext context) {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F7FA),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: enabled ? Colors.transparent : Colors.blueGrey.shade100,
-          ),
+          color: const Color(0xFFF7F8FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueGrey.shade100!),
         ),
         child: Row(
           children: [
@@ -3872,9 +3834,8 @@ Widget build(BuildContext context) {
                   fontWeight: FontWeight.w600,
                   color: !enabled
                       ? Colors.blueGrey[300]
-                      : time == null
-                          ? Colors.blueGrey[400]
-                          : Colors.blueGrey[700],                ),
+                      : Colors.blueGrey[700],
+                ),
               ),
             ),
             Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey[300]),
@@ -3902,7 +3863,6 @@ Widget build(BuildContext context) {
 
     if (selected != null) {
       setState(() {
-        bool _isAllDay = true;
 
         if (isStart) {
           _start = selected;
