@@ -1643,7 +1643,7 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
               Row(
                 children: [
                   Container(
-                    width: 26,
+                    width: 35,
                     height: 26,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
@@ -1675,30 +1675,28 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
 
               // Event chip like the reference ("Welco...")
               Expanded(
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: hasEvents
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[600],
-                            borderRadius: BorderRadius.circular(8),
+                child: hasEvents
+                    ? Container(
+                        constraints: const BoxConstraints(minWidth: 100, minHeight: 22),
+                        alignment: Alignment.center, // 👈 controls text position in pill
+                        decoration: BoxDecoration(
+                          color: Colors.blue[600],
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          dayEvents.first.title,
+                          maxLines: 1,
+                          textAlign: TextAlign.center, // 👈 text alignment
+                          overflow: TextOverflow.clip,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
                           ),
-                          child: Text(
-                            dayEvents.first.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
                 ),
-              ),
             ],
           ),
         ),
