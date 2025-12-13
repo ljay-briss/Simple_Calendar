@@ -1389,8 +1389,8 @@ Widget _buildCompactCalendarHeader() {
           _buildIconButton(Icons.search, _showEventSearch),
           const SizedBox(width: 8),
           _buildIconButton(Icons.person_outline, () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Profile page coming soon!')),
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
             );
           }),
         ],
@@ -4318,4 +4318,221 @@ _DateQuery? _parseDateQueryLoose(String input) {
   }
 
   return null; // not a date-like query
+}
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    // These map to the rest of your app's look:
+    final background = scheme.surface; // or scheme.background
+    final card = scheme.surface;
+    final border = Colors.blueGrey.shade100;
+    final accent = scheme.primary; // your app blue
+    final subtle = accent.withOpacity(0.08);
+
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.blueGrey[800]),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(
+                context: context,
+                background: subtle,
+                accent: accent,
+                border: border,
+              ),
+              const SizedBox(height: 20),
+
+              _ProfileOptionTile(
+                icon: Icons.person_outline,
+                label: 'Account',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+              const SizedBox(height: 12),
+              _ProfileOptionTile(
+                icon: Icons.emoji_events_outlined,
+                label: 'Points',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+              const SizedBox(height: 12),
+              _ProfileOptionTile(
+                icon: Icons.card_giftcard_outlined,
+                label: 'Rewards',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+              const SizedBox(height: 12),
+              _ProfileOptionTile(
+                icon: Icons.group_outlined,
+                label: 'Friends',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+              const SizedBox(height: 12),
+              _ProfileOptionTile(
+                icon: Icons.translate,
+                label: 'Language',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+              const SizedBox(height: 12),
+              _ProfileOptionTile(
+                icon: Icons.help_outline,
+                label: 'Help',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+              const SizedBox(height: 12),
+              _ProfileOptionTile(
+                icon: Icons.settings_outlined,
+                label: 'Settings',
+                accentColor: accent,
+                cardColor: card,
+                borderColor: border,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader({
+    required BuildContext context,
+    required Color background,
+    required Color accent,
+    required Color border,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: accent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.workspace_premium, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text(
+                  'Level 10',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: border),
+            ),
+            child: CircleAvatar(
+              radius: 24,
+              backgroundColor: accent,
+              child: const Icon(Icons.person, color: Colors.white, size: 26),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileOptionTile extends StatelessWidget {
+  const _ProfileOptionTile({
+    required this.icon,
+    required this.label,
+    required this.accentColor,
+    required this.cardColor,
+    required this.borderColor,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color accentColor;
+  final Color cardColor;
+  final Color borderColor;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          children: [
+            Container(
+              height: 44,
+              width: 44,
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blueGrey[800],
+                ),
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: Colors.blueGrey[400], size: 18),
+          ],
+        ),
+      ),
+    );
+  }
 }
