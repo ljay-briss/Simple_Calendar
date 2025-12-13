@@ -485,8 +485,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       List<Event> eventsForSelectedDate, List<_TimeSlot> freeSlots) {
     return Column(
       children: [
-        _buildTopBar(),
-        _buildMonthHeader(),
+        _buildCompactCalendarHeader(),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: 24),
@@ -1335,23 +1334,63 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
 
-  Widget _buildTopBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+Widget _buildCompactCalendarHeader() {
+  final monthLabel = DateFormat('MMMM yyyy').format(_currentMonth);
+
+  return SafeArea(
+    bottom: false,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Row(
         children: [
-          _buildIconButton(Icons.search, () {
-            _showEventSearch();
-          }),
-          const Spacer(),
-          const Text(
-            'Calendar',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+          _buildIconButton(Icons.menu, () {}),
+
+          const SizedBox(width: 10),
+
+          _RoundedArrowButton(
+            icon: Icons.chevron_left,
+            onTap: () {
+              setState(() {
+                _currentMonth =
+                    DateTime(_currentMonth.year, _currentMonth.month - 1);
+                _selectedDate =
+                    DateTime(_currentMonth.year, _currentMonth.month, 1);
+              });
+            },
+          ),
+
+          const SizedBox(width: 8),
+
+          Expanded(
+            child: Center(
+              child: Text(
+                monthLabel,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
-          const Spacer(),
+
+          const SizedBox(width: 8),
+
+          _RoundedArrowButton(
+            icon: Icons.chevron_right,
+            onTap: () {
+              setState(() {
+                _currentMonth =
+                    DateTime(_currentMonth.year, _currentMonth.month + 1);
+                _selectedDate =
+                    DateTime(_currentMonth.year, _currentMonth.month, 1);
+              });
+            },
+          ),
+
+          const SizedBox(width: 10),
+
+          _buildIconButton(Icons.search, _showEventSearch),
+          const SizedBox(width: 8),
           _buildIconButton(Icons.person_outline, () {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Profile page coming soon!')),
@@ -1359,8 +1398,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           }),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
+
 
   Future<void> _showEventSearch() async {
     if (_events.isEmpty) {
@@ -1437,94 +1478,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
 
-  Widget _buildMonthHeader() {
-    final monthLabel = DateFormat('MMMM yyyy').format(_currentMonth);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
+  return Container(
+    margin: const EdgeInsets.symmetric(horizontal: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 16,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    ),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      child: Column(
         children: [
-          _RoundedArrowButton(
-            icon: Icons.chevron_left,
-            onTap: () {
-              setState(() {
-                _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-                _selectedDate = DateTime(_currentMonth.year, _currentMonth.month, 1);
-              });
-            },
-          ),
-          Text(
-            monthLabel,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          
-          _RoundedArrowButton(
-            icon: Icons.chevron_right,
-            onTap: () {
-              setState(() {
-                _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-                _selectedDate = DateTime(_currentMonth.year, _currentMonth.month, 1);
-              });
-            },
-          ),
+          _buildWeekdayHeader(),
+          const SizedBox(height: 12),
+          _buildCalendarGrid(eventsForSelectedDate),
         ],
       ),
-    );
-  }
-
-  Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Calculate the needed grid height based on width so cells always fit.
-          const horizontalPadding = 16.0;
-          const verticalPadding = 20.0;
-          const spacingBelowHeader = 10.0;
-          const weekdayHeaderHeight = 26.0;
-          final contentWidth = constraints.maxWidth - (horizontalPadding * 2);
-          final cellWidth = contentWidth / 7;
-          final cellHeight = cellWidth / 1.32; // childAspectRatio adjustment
-          final gridHeight = cellHeight * 6;
-
-          return SizedBox(
-            height:
-                gridHeight + (verticalPadding * 2) + spacingBelowHeader + weekdayHeaderHeight,
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      horizontalPadding, verticalPadding, horizontalPadding, verticalPadding),
-                  child: Column(
-                    children: [
-                      _buildWeekdayHeader(),
-                      const SizedBox(height: spacingBelowHeader),
-                      Expanded(child: _buildCalendarGrid(eventsForSelectedDate)),
-                    ],
-                  ),
-                ),
-                if (_showIntroCard) _buildIntroOverlay(),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildIntroOverlay() {
     return Positioned.fill(
@@ -1620,7 +1600,7 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
       crossAxisCount: 7,
       mainAxisSpacing: 0,
       crossAxisSpacing: 0,
-      childAspectRatio: 1.2, // tweak if you want taller cells
+      childAspectRatio: .90, // tweak if you want taller cells
     ),
     itemCount: 42,
     itemBuilder: (context, index) {
