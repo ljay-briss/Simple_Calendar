@@ -1343,9 +1343,6 @@ Widget _buildCompactCalendarHeader() {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Row(
         children: [
-          _buildIconButton(Icons.menu, () {}),
-
-          const SizedBox(width: 10),
 
           _RoundedArrowButton(
             icon: Icons.chevron_left,
@@ -1366,8 +1363,8 @@ Widget _buildCompactCalendarHeader() {
               child: Text(
                 monthLabel,
                 style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
