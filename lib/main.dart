@@ -1481,10 +1481,9 @@ Widget _buildCompactCalendarHeader() {
 
 Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
   return Container(
-    margin: const EdgeInsets.symmetric(horizontal: 16),
+    margin: EdgeInsets.zero,
     decoration: BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(24),
       boxShadow: [
         BoxShadow(
           color: Colors.black.withOpacity(0.05),
@@ -1600,7 +1599,7 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
       crossAxisCount: 7,
       mainAxisSpacing: 0,
       crossAxisSpacing: 0,
-      childAspectRatio: .90, // tweak if you want taller cells
+      childAspectRatio: .80, // tweak if you want taller cells
     ),
     itemCount: 42,
     itemBuilder: (context, index) {
@@ -1635,9 +1634,10 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
                   : BorderSide(color: Colors.blueGrey.shade100, width: 1),
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.max,
             children: [
               // Day number row with selected circle
               Row(
@@ -1674,24 +1674,31 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
               const SizedBox(height: 6),
 
               // Event chip like the reference ("Welco...")
-              if (hasEvents)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[600],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    dayEvents.first.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: hasEvents
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[600],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            dayEvents.first.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
+              ),
             ],
           ),
         ),
