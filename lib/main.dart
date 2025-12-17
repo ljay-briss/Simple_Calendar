@@ -935,75 +935,99 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   right: 16,
                   child: SizedBox(
                     height: visualHeight,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF3FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFD7E2F8)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isCompact = constraints.maxHeight <= minEventHeight + 0.1;
+                        final verticalPadding = isCompact ? 6.0 : 8.0;
+                        final betweenTitleAndCategory = isCompact ? 4.0 : 6.0;
+                        final betweenCategoryAndTime = isCompact ? 2.0 : 4.0;
+
+                        return DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF3FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFD7E2F8)),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: verticalPadding,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.max,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    event.title,
-                                    style: TextStyle(
-                                      color: Colors.blue[800],
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 11,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(maxHeight: 28),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            event.title,
+                                            style: TextStyle(
+                                              color: Colors.blue[800],
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 11,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        switch (event.type) {
+                                          EventType.task => Icons.checklist_rounded,
+                                          EventType.note => Icons.sticky_note_2_outlined,
+                                          _ => Icons.event,
+                                        },
+                                        size: 16,
+                                        color: Colors.blue[700],
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Icon(
-                                  switch (event.type) {
-                                    EventType.task => Icons.checklist_rounded,
-                                    EventType.note => Icons.sticky_note_2_outlined,
-                                    _ => Icons.event,
-                                  },
-                                  size: 16,
-                                  color: Colors.blue[700],
+                                SizedBox(height: betweenTitleAndCategory),
+                                Flexible(
+                                  fit: FlexFit.tight,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      event.category,
+                                      style: TextStyle(
+                                        color: Colors.blueGrey[900],
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: isCompact ? 1 : 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      softWrap: true,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: betweenCategoryAndTime),
+                                Text(
+                                  _formatEventTimeRange(start, end),
+                                  style: TextStyle(
+                                    color: Colors.blueGrey[500],
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 6),
-                            Flexible(
-                              child: Text(
-                                event.category,
-                                style: TextStyle(
-                                  color: Colors.blueGrey[900],
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                softWrap: true,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _formatEventTimeRange(start, end),
-                              style: TextStyle(
-                                color: Colors.blueGrey[500],
-                                fontWeight: FontWeight.w500,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 );
