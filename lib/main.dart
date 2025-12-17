@@ -44,6 +44,8 @@ extension RepeatFrequencyExtension on RepeatFrequency {
 
 enum HomeTab { calendar, notes, daily }
 
+enum _ScheduleView { daily, weekly }
+
 const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   'No reminder': null,
   '5 minutes before': Duration(minutes: 5),
@@ -104,7 +106,7 @@ class CalendarApp extends StatelessWidget {
     );
   }
 }
-// Tiny Change
+// Event model and serialization
 class Event {
   final String title;
   final String description;
@@ -117,8 +119,7 @@ class Event {
   final RepeatFrequency repeatFrequency;
   final bool isCompleted;
 
-
-  const Event({
+  Event({
     required this.title,
     required this.description,
     required this.date,
@@ -149,27 +150,34 @@ class Event {
   }
 
   factory Event.fromMap(Map<String, dynamic> map) {
-    final dateString = map['date'] as String?;
-    DateTime parsedDate;
-    try {
-      parsedDate = dateString != null ? DateTime.parse(dateString) : DateTime.now();
-    } catch (_) {
-      parsedDate = DateTime.now();
+    DateTime parseDate(String? s) {
+      if (s == null || s.isEmpty) return DateTime.now();
+      try {
+        return DateTime.parse(s);
+      } catch (_) {
+        return DateTime.now();
+      }
     }
+
+    final date = parseDate(map['date'] as String?);
+    final start = _timeOfDayFromMap(map['startTime']);
+    final end = _timeOfDayFromMap(map['endTime']);
+    final reminder = _durationFromMinutes(map['reminderMinutes']);
+    final type = _eventTypeFromString(map['type']) ?? EventType.event;
+    final repeat = _repeatFrequencyFromString(map['repeatFrequency']) ?? RepeatFrequency.none;
+    final isCompleted = map['isCompleted'] is bool ? map['isCompleted'] as bool : _boolFromAny(map['isCompleted']);
 
     return Event(
       title: (map['title'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
-      date: parsedDate,
-      startTime: _timeOfDayFromMap(map['startTime']),
-      endTime: _timeOfDayFromMap(map['endTime']),
+      date: date,
+      startTime: start,
+      endTime: end,
       category: (map['category'] as String?) ?? 'General',
-      type: _eventTypeFromString(map['type'] as String?) ?? EventType.event,
-      reminder: _durationFromMinutes(map['reminderMinutes']),
-      repeatFrequency:
-          _repeatFrequencyFromString(map['repeatFrequency'] as String?) ??
-              RepeatFrequency.none,
-      isCompleted: _boolFromAny(map['isCompleted']),
+      type: type,
+      reminder: reminder,
+      repeatFrequency: repeat,
+      isCompleted: isCompleted,
     );
   }
 
@@ -244,12 +252,8 @@ class Event {
   }
 
   static bool _boolFromAny(dynamic value) {
-    if (value is bool) {
-      return value;
-    }
-    if (value is num) {
-      return value != 0;
-    }
+    if (value is bool) return value;
+    if (value is num) return value != 0;
     if (value is String) {
       final lower = value.toLowerCase();
       if (lower == 'true') return true;
@@ -395,6 +399,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final List<NoteEntry> _notes = [];
   bool _showIntroCard = true;
   HomeTab _currentTab = HomeTab.calendar;
+  _ScheduleView _currentScheduleView = _ScheduleView.daily;
 
 
   SharedPreferences? _cachedPrefs;
@@ -643,9 +648,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: Column(
               children: [
-                _buildDailySummary(sortedEvents, isToday),
+                _buildScheduleToggle(),
                 const SizedBox(height: 12),
-                _buildDailyTimeline(sortedEvents, isToday),              ],
+                if (_currentScheduleView == _ScheduleView.daily)
+                  _buildDailyTimeline(sortedEvents, isToday)
+                else
+                  _buildWeeklyOverview(),
+              ],
             ),
           ),
         ),
@@ -653,106 +662,281 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildDailySummary(List<Event> eventsForSelectedDate, bool isToday) {
-    final eventCount = eventsForSelectedDate.length;
-    final scheduledHours = eventsForSelectedDate.fold<double>(0, (sum, event) {
+  Widget _buildScheduleToggle() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F0FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8E3FF)),
+      ),
+      child: Row(
+        children: [
+          _buildToggleButton('Daily', _ScheduleView.daily, Icons.wb_sunny_rounded),
+          const SizedBox(width: 8),
+          _buildToggleButton('Weekly', _ScheduleView.weekly, Icons.view_week_rounded),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggleButton(String label, _ScheduleView view, IconData icon) {
+    final isActive = _currentScheduleView == view;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          if (!isActive) {
+            setState(() => _currentScheduleView = view);
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : const Color(0xFFDDE7FB),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: isActive
+                ? const [
+                    BoxShadow(
+                      color: Color(0x142C3A4B),
+                      blurRadius: 10,
+                      offset: Offset(0, 6),
+                    ),
+                  ]
+                : [],
+            border: Border.all(
+              color: isActive ? const Color(0xFFBFD4FF) : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon,
+                  size: 18,
+                  color: isActive ? Colors.blue[700] : Colors.blueGrey[600]),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: isActive ? Colors.blue[800] : Colors.blueGrey[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _calculateScheduledHours(List<Event> events) {
+    return events.fold<double>(0, (sum, event) {
       if (event.startTime == null || event.endTime == null) return sum + 1;
       final startMinutes = (event.startTime!.hour * 60) + event.startTime!.minute;
       final endMinutes = (event.endTime!.hour * 60) + event.endTime!.minute;
       final durationMinutes = (endMinutes - startMinutes).clamp(30, 180);
       return sum + (durationMinutes / 60).toDouble();
     });
+  }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFEDF3FF), Color(0xFFE4ECFF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFD8E3FF)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x1A2C3A4B),
-                  blurRadius: 12,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Icon(
-              isToday ? Icons.wb_sunny_rounded : Icons.calendar_today_rounded,
-              color: Colors.blue[700],
-              size: 26,
-            ),
+  Widget _buildWeeklyOverview() {
+    final weekStart =
+        _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+    final weekDays =
+        List.generate(7, (index) => weekStart.add(Duration(days: index)));
+    final totalHours = weekDays.fold<double>(0, (sum, date) {
+      return sum + _calculateScheduledHours(_getEventsForDate(date));
+    });
+    final totalEvents = weekDays.fold<int>(0, (sum, date) {
+      return sum + _getEventsForDate(date).length;
+    });
+
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final rangeLabel =
+        '${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekEnd)}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5FF),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE0E8FF)),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      isToday ? 'Today' : DateFormat('EEEE').format(_selectedDate),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.blueGrey[900],
-                      ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Weekly overview',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1B2A4B),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                rangeLabel,
+                style: TextStyle(
+                  color: Colors.blueGrey[600],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildScheduleChip(Icons.schedule,
+                      '${totalHours.toStringAsFixed(1)} hrs scheduled'),
+                  _buildScheduleChip(
+                      Icons.event_available, '$totalEvents events'),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...weekDays.map((date) => _buildWeeklyDayCard(
+              date,
+              _getEventsForDate(date),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildWeeklyDayCard(DateTime date, List<Event> events) {
+    final isSelected = _isSameDay(date, _selectedDate);
+    final isToday = _isSameDay(date, DateTime.now());
+    final scheduledHours = _calculateScheduledHours(events);
+    final eventCount = events.length;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedDate = date;
+          _currentScheduleView = _ScheduleView.daily;
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFE9F1FF) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color:
+                isSelected ? const Color(0xFFBFD4FF) : const Color(0xFFE5EAF2),
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D000000),
+              blurRadius: 10,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isToday ? Colors.blue[50] : const Color(0xFFF6F8FC),
+                shape: BoxShape.circle,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    DateFormat('EEE').format(date),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.blueGrey[700],
                     ),
-                    if (isToday) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.red[50],
-                          borderRadius: BorderRadius.circular(12),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    DateFormat('d').format(date),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.blueGrey[900],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        DateFormat('MMMM d').format(date),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
                         ),
-                        child: Text(
-                          'Live',
-                          style: TextStyle(
-                            color: Colors.red[700],
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
+                      ),
+                      if (isToday) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red[50],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            'Today',
+                            style: TextStyle(
+                              color: Colors.red[700],
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _buildScheduleChip(
+                        Icons.schedule,
+                        '${scheduledHours.toStringAsFixed(1)} hrs',
+                      ),
+                      _buildScheduleChip(
+                        Icons.check_circle_outline,
+                        '$eventCount scheduled',
                       ),
                     ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${DateFormat('MMMM d, yyyy').format(_selectedDate)} • $eventCount item${eventCount == 1 ? '' : 's'}',
-                  style: TextStyle(
-                    color: Colors.blueGrey[500],
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _buildSummaryChip(Icons.schedule, '${scheduledHours.toStringAsFixed(1)} hrs'),
-                    const SizedBox(width: 8),
-                    _buildSummaryChip(Icons.check_circle_outline, '$eventCount scheduled'),
-                  ],
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildSummaryChip(Icons.schedule, '${scheduledHours.toStringAsFixed(1)} hrs'),
+                      const SizedBox(width: 8),
+                      _buildSummaryChip(Icons.check_circle_outline, '$eventCount scheduled'),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -764,6 +948,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFDCE6F6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.blueGrey[600]),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.blueGrey[700],
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScheduleChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F8FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE6EEF9)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -985,11 +1195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       Icon(
-                                        switch (event.type) {
-                                          EventType.task => Icons.checklist_rounded,
-                                          EventType.note => Icons.sticky_note_2_outlined,
-                                          _ => Icons.event,
-                                        },
+                                        _iconForEventType(event.type),
                                         size: 16,
                                         color: Colors.blue[700],
                                       ),
@@ -1050,6 +1256,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final startLabel = DateFormat.jm().format(startTime);
     final endLabel = DateFormat.jm().format(endTime);
     return '$startLabel - $endLabel';
+  }
+
+  IconData _iconForEventType(EventType type) {
+    switch (type) {
+      case EventType.task:
+        return Icons.checklist_rounded;
+      case EventType.note:
+        return Icons.sticky_note_2_outlined;
+      default:
+        return Icons.event;
+    }
   }
 
 
@@ -1959,14 +2176,13 @@ Widget _buildEventTile(Event event) {
     switch (_currentTab) {      
       
       case HomeTab.calendar:
-
       case HomeTab.daily:
         _showAddEventDialog();
         break;
       case HomeTab.notes:
         _showAddNoteDialog();
         break;    
-        }
+    }
   }
 
   void _shareDaySchedule() {
@@ -2291,7 +2507,7 @@ class _OverviewSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -2309,7 +2525,8 @@ class _OverviewSection extends StatelessWidget {
           Row(
             mainAxisAlignment: onShare != null
                 ? MainAxisAlignment.spaceBetween
-                : MainAxisAlignment.start,            children: [
+                : MainAxisAlignment.start,
+            children: [
               Text(
                 title,
                 style: const TextStyle(
@@ -2425,11 +2642,11 @@ InputDecoration _sharedInputDecoration({
     prefixIcon: icon != null ? Icon(icon, color: Colors.blueGrey[400]) : null,
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: Colors.blueGrey.shade100!),
+      borderSide: BorderSide(color: Colors.blueGrey.shade100),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: Colors.blueGrey.shade100!),
+      borderSide: BorderSide(color: Colors.blueGrey.shade100),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
@@ -3136,7 +3353,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
           decoration: BoxDecoration(
             color: const Color(0xFFF7F8FA),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blueGrey.shade100!),
+            border: Border.all(color: Colors.blueGrey.shade100),
           ),
           child: Row(
             children: [
@@ -3177,7 +3394,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFFF7F8FA),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blueGrey.shade100!),
+          border: Border.all(color: Colors.blueGrey.shade100),
         ),
         child: Row(
           children: [
@@ -3230,7 +3447,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFFF7F8FA),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blueGrey.shade100!),
+          border: Border.all(color: Colors.blueGrey.shade100),
         ),
         child: Row(
           children: [
@@ -3663,7 +3880,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFFF7F8FA),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blueGrey.shade100!),
+          border: Border.all(color: Colors.blueGrey.shade100),
         ),
         child: Row(
           children: [
