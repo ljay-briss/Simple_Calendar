@@ -742,74 +742,334 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
-  Widget _buildWeeklyOverview() {
-    final weekStart =
-        _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
-    final weekDays =
-        List.generate(7, (index) => weekStart.add(Duration(days: index)));
-    final totalHours = weekDays.fold<double>(0, (sum, date) {
-      return sum + _calculateScheduledHours(_getEventsForDate(date));
-    });
-    final totalEvents = weekDays.fold<int>(0, (sum, date) {
-      return sum + _getEventsForDate(date).length;
-    });
+Widget _buildWeeklyOverview() {
+  // Google Calendar style: week grid, not summary cards
+  final weekStart = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+  final weekDays = List.generate(7, (i) => weekStart.add(Duration(days: i)));
 
-    final weekEnd = weekStart.add(const Duration(days: 6));
-    final rangeLabel =
-        '${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekEnd)}';
+  // Provide a bounded height so this can be embedded inside the surrounding
+  // SingleChildScrollView/Column used by the daily page. Using a fixed header
+  // height + hourly grid height avoids unbounded Expanded errors.
+  const hourHeight = 72.0;
+  final startHour = _dayStartHour;
+  final endHour = _dayEndHour;
+  final totalHours = endHour - startHour + 1;
+  final gridHeight = totalHours * hourHeight;
+  const headerHeight = 72.0;
+  final totalHeight = headerHeight + gridHeight;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  return SizedBox(
+    height: totalHeight,
+    child: Column(
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF1F5FF),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFE0E8FF)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        _buildWeeklyHeaderRow(weekDays),
+        const SizedBox(height: 8),
+        SizedBox(height: gridHeight, child: _buildWeeklyTimeGrid(weekDays)),
+      ],
+    ),
+  );
+}
+
+Widget _buildWeeklyHeaderRow(List<DateTime> days) {
+  const timeColWidth = 70.0;
+  final today = DateTime.now();
+
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    child: Row(
+      children: [
+        const SizedBox(width: timeColWidth),
+        Expanded(
+          child: Row(
             children: [
-              const Text(
-                'Weekly overview',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1B2A4B),
+              for (final day in days)
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      setState(() {
+                        _selectedDate = day;
+                        _currentScheduleView = _ScheduleView.daily;
+                      });
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          DateFormat('EEE').format(day).toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.blueGrey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: 32,
+                          height: 32,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: DateUtils.isSameDay(day, today)
+                                ? Colors.blue[600]
+                                : Colors.transparent,
+                            border: DateUtils.isSameDay(day, today)
+                                ? null
+                                : Border.all(color: Colors.blueGrey[200]!),
+                          ),
+                          child: Text(
+                            '${day.day}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: DateUtils.isSameDay(day, today)
+                                  ? Colors.white
+                                  : Colors.blueGrey[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                rangeLabel,
-                style: TextStyle(
-                  color: Colors.blueGrey[600],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildScheduleChip(Icons.schedule,
-                      '${totalHours.toStringAsFixed(1)} hrs scheduled'),
-                  _buildScheduleChip(
-                      Icons.event_available, '$totalEvents events'),
-                ],
-              ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        ...weekDays.map((date) => _buildWeeklyDayCard(
-              date,
-              _getEventsForDate(date),
-            )),
       ],
-    );
-  }
+    ),
+  );
+}
+
+Widget _buildWeeklyTimeGrid(List<DateTime> days) {
+  const startHour = 5;
+  const endHour = 23;
+  const hourHeight = 72.0;
+  const timeColWidth = 70.0;
+  const minDayWidth = 140.0;
+
+  final totalHours = endHour - startHour + 1;
+  final gridHeight = totalHours * hourHeight;
+
+  final screenWidth = MediaQuery.of(context).size.width;
+  final gridWidth = math.max(screenWidth, timeColWidth + 7 * minDayWidth);
+
+  return SingleChildScrollView(
+    // vertical scroll
+    child: SizedBox(
+      height: gridHeight, // ✅ bounded height for Stack + Positioned
+      child: SingleChildScrollView(
+        // horizontal scroll
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: gridWidth, // ✅ bounded width for LayoutBuilder/Stack
+          height: gridHeight,
+          child: _buildWeeklyGridStack(
+            days: days,
+            startHour: startHour,
+            endHour: endHour,
+            hourHeight: hourHeight,
+            timeColWidth: timeColWidth,
+            gridWidth: gridWidth,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+
+List<Widget> _buildWeeklyNowLine(
+  List<DateTime> days,
+  double timeColWidth,
+  double dayWidth,
+  int startHour,
+  int endHour,
+  double hourHeight,
+) {
+  final now = DateTime.now();
+  final todayIndex = days.indexWhere((d) => DateUtils.isSameDay(d, now));
+  if (todayIndex == -1) return [];
+
+  final totalMinutes = (endHour - startHour + 1) * 60;
+  final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
+  if (nowMinutes < 0 || nowMinutes > totalMinutes) return [];
+
+  final top = ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight;
+  final left = timeColWidth + (todayIndex * dayWidth);
+
+  return [
+    Positioned(
+      top: top,
+      left: left,
+      width: dayWidth,
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: Colors.red[600],
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: Container(height: 1.5, color: Colors.red[300])),
+        ],
+      ),
+    ),
+  ];
+}
+
+
+Widget _buildWeeklyGridStack({
+  required List<DateTime> days,
+  required int startHour,
+  required int endHour,
+  required double hourHeight,
+  required double timeColWidth,
+  required double gridWidth,
+}) {
+  final totalHours = endHour - startHour + 1;
+  final dayWidth = (gridWidth - timeColWidth) / 7;
+  final gridHeight = totalHours * hourHeight;
+
+  return Stack(
+    children: [
+      // hour grid
+      Column(
+        children: List.generate(totalHours, (i) {
+          final hour = startHour + i;
+          return SizedBox(
+            height: hourHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: timeColWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6, right: 8),
+                    child: Text(
+                      _formatHourLabel(hour),
+                      style: TextStyle(
+                        color: Colors.blueGrey[400],
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 10),
+                    height: 1,
+                    color: const Color(0xFFE4EAF3),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+
+      // vertical separators
+      Positioned(
+        left: timeColWidth,
+        top: 0,
+        bottom: 0,
+        child: SizedBox(
+          width: gridWidth - timeColWidth,
+          child: Row(
+            children: List.generate(7, (_) {
+              return Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      right: BorderSide(color: Color(0xFFE7EDF6)),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+
+      // events
+      for (int dayIndex = 0; dayIndex < 7; dayIndex++)
+        ..._getEventsForDate(days[dayIndex]).map((event) {
+          final start = event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
+          final end = event.endTime ??
+              TimeOfDay(hour: math.min(start.hour + 1, endHour), minute: start.minute);
+
+          final totalMinutes = (endHour - startHour + 1) * 60;
+          final startMinutes = ((start.hour - startHour) * 60) + start.minute;
+          final endMinutes = ((end.hour - startHour) * 60) + end.minute;
+
+          final clampedStart = math.max(0, startMinutes);
+          final clampedEnd = math.max(
+            clampedStart + 30,
+            math.min(endMinutes, totalMinutes),
+          );
+
+          final top = (clampedStart / 60) * hourHeight;
+          final height = ((clampedEnd - clampedStart) / 60) * hourHeight;
+
+          final left = timeColWidth + (dayIndex * dayWidth) + 6;
+
+          return Positioned(
+            top: top,
+            left: left,
+            width: dayWidth - 12,
+            height: math.max(44, height),
+            child: _buildWeeklyEventBlock(event, start, end),
+          );
+        }),
+    ],
+  );
+}
+
+
+Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
+  final timeText = _formatEventTimeRange(start, end);
+
+  return Container(
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: Colors.blue[600],
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: DefaultTextStyle(
+      style: const TextStyle(color: Colors.white),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            event.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            timeText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+          if (event.category.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              event.category,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
 
   Widget _buildWeeklyDayCard(DateTime date, List<Event> events) {
     final isSelected = _isSameDay(date, _selectedDate);
