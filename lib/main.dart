@@ -783,9 +783,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildDailyTimeline(List<Event> events, bool isToday) {    const startHour = 5;
+  Widget _buildDailyTimeline(List<Event> events, bool isToday) {
+    const startHour = 5;
     const endHour = 23;
     const hourHeight = 72.0;
+    const minEventHeight = 68.0;
     final totalHours = endHour - startHour + 1;
     final timelineHeight = totalHours * hourHeight;
 
@@ -798,18 +800,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF9FBFF),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A2C3A4B),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE7EDF6)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         child: SizedBox(
           height: timelineHeight,
           child: Stack(
@@ -825,48 +821,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         SizedBox(
                           width: 70,
                           child: Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _formatHourLabel(hour),
-                                  style: TextStyle(
-                                    color: Colors.blueGrey[400],
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                if (isToday && hour == now.hour)
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 6),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red[50],
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      'Current hour',
-                                      style: TextStyle(
-                                        color: Colors.red[700],
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            padding: const EdgeInsets.only(top: 6, right: 8),
+                            child: Text(
+                              _formatHourLabel(hour),
+                              style: TextStyle(
+                                color: Colors.blueGrey[400],
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         ),
                         Expanded(
                           child: Column(
                             children: [
-                              const SizedBox(height: 12),
-                              Container(
-                                height: 1,
-                                color: const Color(0xFFE8EEF6),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Container(
+                                  height: 1,
+                                  color: const Color(0xFFE4EAF3),
+                                ),
                               ),
                             ],
                           ),
@@ -884,41 +858,41 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   child: Row(
                     children: [
                       Container(
-                        width: 10,
-                        height: 10,
+                        width: 8,
+                        height: 8,
                         decoration: BoxDecoration(
                           color: Colors.red[600],
                           shape: BoxShape.circle,
                           boxShadow: const [
                             BoxShadow(
                               color: Color(0x1AF44336),
-                              blurRadius: 8,
+                              blurRadius: 6,
                               offset: Offset(0, 2),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: Container(
-                          height: 2,
-                          color: Colors.red[400],
+                          height: 1.5,
+                          color: Colors.red[300],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
-                          vertical: 6,
+                          vertical: 5,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           boxShadow: const [
                             BoxShadow(
                               color: Color(0x142C3A4B),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
+                              blurRadius: 8,
+                              offset: Offset(0, 3),
                             ),
                           ],
                         ),
@@ -926,12 +900,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           DateFormat.jm().format(now),
                           style: TextStyle(
                             color: Colors.red[600],
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 11,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                     ],
                   ),
                 ),
@@ -946,86 +920,90 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 final startMinutes = ((start.hour - startHour) * 60) + start.minute;
                 final endMinutes = ((end.hour - startHour) * 60) + end.minute;
                 final clampedStart = math.max(0, startMinutes);
-                final clampedEnd = math.max(clampedStart + 45, math.min(endMinutes, (endHour - startHour + 1) * 60));
+                final clampedEnd = math.max(
+                  clampedStart + 45,
+                  math.min(endMinutes, (endHour - startHour + 1) * 60),
+                );
 
                 final top = (clampedStart / 60) * hourHeight;
                 final height = ((clampedEnd - clampedStart) / 60) * hourHeight;
+                final visualHeight = height < minEventHeight ? minEventHeight : height;
 
                 return Positioned(
                   top: top,
-                  left: 78,
+                  left: 76,
                   right: 16,
-                  child: Container(
-                    height: height,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFE8F0FF), Color(0xFFDCE7FF)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFD0E0FF)),
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Row(
+                  child: SizedBox(
+                    height: visualHeight,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF3FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFD7E2F8)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    event.title,
+                                    style: TextStyle(
+                                      color: Colors.blue[800],
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 11,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  switch (event.type) {
+                                    EventType.task => Icons.checklist_rounded,
+                                    EventType.note => Icons.sticky_note_2_outlined,
+                                    _ => Icons.event,
+                                  },
+                                  size: 16,
+                                  color: Colors.blue[700],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Flexible(
                               child: Text(
                                 event.category,
                                 style: TextStyle(
-                                  color: Colors.blue[800],
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
+                                  color: Colors.blueGrey[900],
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
                                 ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: true,
                               ),
                             ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                switch (event.type) {
-                                  EventType.task => Icons.checklist_rounded,
-                                  EventType.note => Icons.sticky_note_2_outlined,
-                                  _ => Icons.event,
-                                },
-                                size: 16,
-                                color: Colors.blue[700],
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatEventTimeRange(start, end),
+                              style: TextStyle(
+                                color: Colors.blueGrey[500],
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          event.title,
-                          style: TextStyle(
-                            color: Colors.blueGrey[900],
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _formatEventTimeRange(start, end),
-                          style: TextStyle(
-                            color: Colors.blueGrey[600],
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 );
