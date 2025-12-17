@@ -55,14 +55,18 @@ const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   '1 week before': Duration(days: 7),
 };
 
-const List<String> kEventCategories = <String>[
+const List<String> kCategoryOptions = <String>[
   'General',
   'Work',
   'Personal',
+  'Family',
   'Health',
   'Education',
+  'School',
+  'Sport',
   'Travel',
   'Entertainment',
+  'Other',
 ];
 
 String reminderLabelFromDuration(Duration? duration) {
@@ -265,6 +269,7 @@ class NoteEntry {
   final DateTime updatedAt;
   final bool isPinned;
   final bool addedToCalendar;
+  final bool isChecklist;
 
   const NoteEntry({
     required this.id,
@@ -276,6 +281,7 @@ class NoteEntry {
     required this.updatedAt,
     this.isPinned = false,
     this.addedToCalendar = false,
+     this.isChecklist = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -289,6 +295,7 @@ class NoteEntry {
       'updatedAt': updatedAt.toIso8601String(),
       'isPinned': isPinned,
       'addedToCalendar': addedToCalendar,
+      'isChecklist': isChecklist,
     };
   }
 
@@ -318,6 +325,7 @@ class NoteEntry {
     final id = (map['id'] as String?) ?? createdAt.microsecondsSinceEpoch.toString();
 
     final addedToCalendarValue = map['addedToCalendar'];
+    final isChecklistValue = map['isChecklist'];
     final isPinnedValue = map['isPinned'];
 
     return NoteEntry(
@@ -332,6 +340,9 @@ class NoteEntry {
       addedToCalendar: addedToCalendarValue is bool
           ? addedToCalendarValue
           : Event._boolFromAny(addedToCalendarValue),
+        isChecklist: isChecklistValue is bool
+          ? isChecklistValue
+          : Event._boolFromAny(isChecklistValue),
     );
   }
 
@@ -345,6 +356,7 @@ class NoteEntry {
     DateTime? updatedAt,
     bool? isPinned,
     bool? addedToCalendar,
+    bool? isChecklist,
   }) {
     return NoteEntry(
       id: id ?? this.id,
@@ -356,6 +368,7 @@ class NoteEntry {
       updatedAt: updatedAt ?? this.updatedAt,
       isPinned: isPinned ?? this.isPinned,
       addedToCalendar: addedToCalendar ?? this.addedToCalendar,
+      isChecklist: isChecklist ?? this.isChecklist,
     );
   }
 }
@@ -1039,8 +1052,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 
   Widget _buildNotesBody() {
-    // Folders should be based on notes, not events
     final categories = <String>{
+      ...kCategoryOptions,
       ..._notes.map((n) => n.category.trim()).where((c) => c.isNotEmpty),
     }.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -2047,18 +2060,28 @@ Widget _buildEventTile(Event event) {
 
   Color _getCategoryColor(String category) {
     switch (category.toLowerCase()) {
+      case 'general':
+        return Colors.blueGrey;
       case 'work':
         return Colors.blue;
       case 'personal':
         return Colors.green;
+      case 'family':
+        return Colors.deepOrange;
       case 'health':
         return Colors.redAccent;
       case 'education':
         return Colors.deepPurple;
+      case 'school':
+        return Colors.teal;
+      case 'sport':
+        return Colors.lightGreen;
       case 'travel':
         return Colors.orange;
       case 'entertainment':
         return Colors.pinkAccent;
+      case 'other':
+        return Colors.indigoAccent;
       default:
         return Colors.blueGrey;
     }
@@ -2523,7 +2546,7 @@ class AddNoteDialog extends StatefulWidget {
 class _AddNoteDialogState extends State<AddNoteDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
-  String _selectedCategory = kEventCategories.first;
+  String _selectedCategory = kCategoryOptions.first;
   DateTime? _selectedDate;
   bool _addToCalendar = false;
 
@@ -2613,7 +2636,7 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
                             prefixIcon: Icon(Icons.folder_outlined),
                             filled: true,
                           ),
-                          items: kEventCategories
+                          items: kCategoryOptions
                               .map(
                                 (category) => DropdownMenuItem<String>(
                                   value: category,
@@ -2823,22 +2846,13 @@ class _AddEventDialogState extends State<AddEventDialog> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   EventType _selectedType = EventType.event;
-  String _selectedCategory = 'Other';
+  String _selectedCategory = kCategoryOptions.first;
   String _selectedReminderLabel = kReminderOptions.keys.first;
   RepeatFrequency _repeatFrequency = RepeatFrequency.none;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   bool _isAllDay = true;
   late DateTime _selectedDate;
-
-  static const List<String> _categoryOptions = <String>[
-    'Work',
-    'School',
-    'Sport',
-    'Personal',
-    'Family',
-    'Other',
-  ];
 
   @override
   void initState() {
@@ -3057,25 +3071,25 @@ class _AddEventDialogState extends State<AddEventDialog> {
       },
     );
     final categoryField = DropdownButtonFormField<String>(
-    initialValue: _selectedCategory,
-    isExpanded: true,
-    decoration: _sharedInputDecoration(
-       label: 'Add to',
-      icon: Icons.folder_outlined,
-    ),
-    items: _categoryOptions
-        .map(
-          (category) => DropdownMenuItem<String>(
-            value: category,
-            child: Text(category),
-          ),
-        )
-        .toList(),
-    onChanged: (value) {
-      if (value == null) return;
-      setState(() => _selectedCategory = value);
-     },
-  );
+      initialValue: _selectedCategory,
+      isExpanded: true,
+      decoration: _sharedInputDecoration(
+        label: 'Add to',
+        icon: Icons.folder_outlined,
+      ),
+      items: kCategoryOptions
+          .map(
+            (category) => DropdownMenuItem<String>(
+              value: category,
+              child: Text(category),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _selectedCategory = value);
+      },
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3596,7 +3610,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
         label: 'Add to',
         icon: Icons.folder_outlined,
       ),
-      items: kEventCategories
+      items: kCategoryOptions
           .map(
             (category) => DropdownMenuItem<String>(
               value: category,
