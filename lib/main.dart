@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+part 'note_editor_page.dart';
+part 'notes_folder_page.dart';
+
 enum EventType { event, task, note }
 
 extension EventTypeExtension on EventType {
@@ -253,64 +256,79 @@ class Event {
 }
 
 class NoteEntry {
+  final String id;
   final String title;
   final String description;
   final String category;
   final DateTime? date;
   final DateTime createdAt;
+  final DateTime updatedAt;
+  final bool isPinned;
   final bool addedToCalendar;
 
   const NoteEntry({
+    required this.id,
     required this.title,
     required this.description,
     required this.category,
     this.date,
     required this.createdAt,
+    required this.updatedAt,
+    this.isPinned = false,
     this.addedToCalendar = false,
   });
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'title': title,
       'description': description,
       'category': category,
       'date': date?.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'isPinned': isPinned,
       'addedToCalendar': addedToCalendar,
     };
   }
 
   factory NoteEntry.fromMap(Map<String, dynamic> map) {
-    DateTime? parsedDate;
-    final dateValue = map['date'];
-    if (dateValue is String && dateValue.isNotEmpty) {
+    DateTime? _parseOpt(String? s) {
+      if (s == null || s.isEmpty) return null;
       try {
-        parsedDate = DateTime.parse(dateValue);
+        return DateTime.parse(s);
       } catch (_) {
-        parsedDate = null;
+        return null;
       }
     }
 
-    DateTime createdAt;
-    final createdAtValue = map['createdAt'];
-    if (createdAtValue is String) {
+    DateTime _parseOrNow(String? s) {
+      if (s == null || s.isEmpty) return DateTime.now();
       try {
-        createdAt = DateTime.parse(createdAtValue);
+        return DateTime.parse(s);
       } catch (_) {
-        createdAt = DateTime.now();
+        return DateTime.now();
       }
-    } else {
-      createdAt = DateTime.now();
     }
+
+    final createdAt = _parseOrNow(map['createdAt'] as String?);
+    final updatedAtStr = map['updatedAt'] as String?;
+    final updatedAt = updatedAtStr == null ? createdAt : _parseOrNow(updatedAtStr);
+
+    final id = (map['id'] as String?) ?? createdAt.microsecondsSinceEpoch.toString();
 
     final addedToCalendarValue = map['addedToCalendar'];
+    final isPinnedValue = map['isPinned'];
 
     return NoteEntry(
+      id: id,
       title: (map['title'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
       category: (map['category'] as String?) ?? 'General',
-      date: parsedDate,
+      date: _parseOpt(map['date'] as String?),
       createdAt: createdAt,
+      updatedAt: updatedAt,
+      isPinned: isPinnedValue is bool ? isPinnedValue : Event._boolFromAny(isPinnedValue),
       addedToCalendar: addedToCalendarValue is bool
           ? addedToCalendarValue
           : Event._boolFromAny(addedToCalendarValue),
@@ -318,19 +336,25 @@ class NoteEntry {
   }
 
   NoteEntry copyWith({
+    String? id,
     String? title,
     String? description,
     String? category,
     DateTime? date,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    bool? isPinned,
     bool? addedToCalendar,
   }) {
     return NoteEntry(
+      id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
       category: category ?? this.category,
       date: date ?? this.date,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isPinned: isPinned ?? this.isPinned,
       addedToCalendar: addedToCalendar ?? this.addedToCalendar,
     );
   }
@@ -427,7 +451,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await prefs.setStringList(_eventsStorageKey, encoded);
   }
 
-  Future<void> _persistNotes() async {
+  void _upsertNote(NoteEntry note) {
+    final i = _notes.indexWhere((n) => n.id == note.id);
+    setState(() {
+      if (i == -1) {
+        _notes.add(note);
+      } else {
+        _notes[i] = note;
+      }
+    });
+    unawaited(_saveNotes());
+  }
+
+  void _deleteNote(String id) {
+    setState(() => _notes.removeWhere((n) => n.id == id));
+    unawaited(_saveNotes());
+  }
+
+  void _togglePin(String id) {
+    final i = _notes.indexWhere((n) => n.id == id);
+    if (i == -1) return;
+
+    final current = _notes[i];
+    final updated = current.copyWith(
+      isPinned: !current.isPinned,
+      updatedAt: DateTime.now(),
+    );
+
+    setState(() => _notes[i] = updated);
+    unawaited(_saveNotes());
+  }
+
+
+  Future<void> _saveNotes() async {
     final prefs = await _getPrefs();
     final encoded = _notes.map((note) => jsonEncode(note.toMap())).toList();
     await prefs.setStringList(_notesStorageKey, encoded);
@@ -446,10 +502,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _handleNoteAdded(NoteEntry note, {Event? linkedEvent}) {
-    setState(() {
-      _notes.add(note);
-    });
-    unawaited(_persistNotes());
+    _upsertNote(note);
 
     if (linkedEvent != null) {
       _handleEventAdded(linkedEvent);
@@ -986,83 +1039,116 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 
   Widget _buildNotesBody() {
-    final sections = <Widget>[];
-
-    void addCategory(String category) {
-      final categoryEvents = _events
-          .where((event) => event.category.toLowerCase() == category.toLowerCase())
-          .toList()
-        ..sort((a, b) {
-          final primary = a.date.compareTo(b.date);
-          if (primary != 0) return primary;
-          final aStart = a.startTime?.hour ?? 0;
-          final bStart = b.startTime?.hour ?? 0;
-          if (aStart != bStart) return aStart.compareTo(bStart);
-          final aMinute = a.startTime?.minute ?? 0;
-          final bMinute = b.startTime?.minute ?? 0;
-          return aMinute.compareTo(bMinute);
-        });
-
-      final categoryNotes = _notes
-          .where((note) => note.category.toLowerCase() == category.toLowerCase())
-          .toList()
-        ..sort((a, b) {
-          final aDate = a.date ?? a.createdAt;
-          final bDate = b.date ?? b.createdAt;
-          return aDate.compareTo(bDate);
-        });
-
-      if (categoryEvents.isEmpty && categoryNotes.isEmpty) {
-        return;
-      }
-
-      sections.add(_buildNotesCategoryCard(category, categoryEvents, categoryNotes));
-    }
-
-    for (final category in kEventCategories) {
-      addCategory(category);
-    }
-
-    final knownCategories =
-        kEventCategories.map((category) => category.toLowerCase()).toSet();
-    final customCategories = <String>{
-      ..._events
-          .map((event) => event.category)
-          .where((category) =>
-              !knownCategories.contains(category.toLowerCase())),
-      ..._notes
-          .map((note) => note.category)
-          .where((category) =>
-              !knownCategories.contains(category.toLowerCase())),
+    // Folders should be based on notes, not events
+    final categories = <String>{
+      ..._notes.map((n) => n.category.trim()).where((c) => c.isNotEmpty),
     }.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-    for (final category in customCategories) {
-      addCategory(category);
-    }
+    int countFor(String category) => _notes
+        .where((n) => n.category.toLowerCase() == category.toLowerCase())
+        .length;
+
+    int pinnedCountFor(String category) => _notes
+        .where((n) =>
+            n.category.toLowerCase() == category.toLowerCase() && n.isPinned)
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildNotesTopBar(),
         Expanded(
-          child: sections.isEmpty
+          child: categories.isEmpty
               ? const Center(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 32),
                     child: Text(
-                      'Add a note, task, or event to see it organized here by category.',
+                      'Create a note to see it appear in a folder.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                  children: sections,
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                  itemCount: categories.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final category = categories[index];
+                    return _buildFolderCard(
+                      category: category,
+                      count: countFor(category),
+                      pinnedCount: pinnedCountFor(category),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => NotesFolderPage(
+                              category: category,
+                              notes: _notes,
+                              onUpsert: _upsertNote,
+                              onDelete: _deleteNote,
+                              onTogglePin: _togglePin,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFolderCard({
+    required String category,
+    required int count,
+    required int pinnedCount,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],        
+          ),
+        child: Row(
+          children: [
+            Icon(Icons.folder_outlined, color: Colors.blueGrey[500]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(category,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  if (pinnedCount > 0) ...[
+                    const SizedBox(height: 2),
+                    Text('$pinnedCount pinned',
+                        style: TextStyle(fontSize: 12, color: Colors.blueGrey[500])),
+                  ],
+                ],
+              ),
+            ),
+            Text('$count',
+                style: TextStyle(color: Colors.blueGrey[400], fontWeight: FontWeight.w600)),
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right, color: Colors.blueGrey[300]),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1081,235 +1167,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           const Spacer(),
           _buildIconButton(Icons.search, _showEventSearch),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotesCategoryCard(
-    String category,
-    List<Event> events,
-    List<NoteEntry> notes,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.folder_outlined, color: Colors.blueGrey[500]),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  category,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Text(
-                '${events.length + notes.length}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.blueGrey[400],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (events.isNotEmpty)
-            ...[for (final event in events) _buildNotesEventTile(event)],
-          if (events.isNotEmpty && notes.isNotEmpty)
-            const Divider(height: 24, thickness: 0.6),
-          if (notes.isNotEmpty)
-            ...[for (final note in notes) _buildNotesNoteTile(note)],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotesEventTile(Event event) {
-    final isTask = event.type == EventType.task;
-    final isNote = event.type == EventType.note;
-    final icon = isTask
-        ? Icons.check_circle_outline
-        : isNote
-            ? Icons.sticky_note_2_outlined
-            : Icons.event_outlined;
-    final iconColor = isTask
-        ? Colors.deepPurple[300]
-        : isNote
-            ? Colors.amber[600]
-            : Colors.blue[400];
-
-    final subtitleParts = <String>[];
-    subtitleParts.add(DateFormat('MMM d, yyyy').format(event.date));
-    if (event.hasTimeRange) {
-      subtitleParts.add(
-          '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}');
-    } else if (!isNote) {
-      subtitleParts.add('All day');
-    } else {
-      subtitleParts.add('Note');
-    }
-    subtitleParts.add(event.type.label);
-    final subtitle = subtitleParts.join(' • ');
-
-    final titleStyle = TextStyle(
-      fontSize: 15,
-      fontWeight: FontWeight.w700,
-      color: isTask && event.isCompleted
-          ? Colors.blueGrey[400]
-          : Colors.blueGrey[900],
-      decoration:
-          isTask && event.isCompleted ? TextDecoration.lineThrough : null,
-    );
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _showEditEventDialog(event),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: Colors.white,
-          border: Border.all(color: Colors.blueGrey[50]!),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: iconColor?.withOpacity(0.12) ?? Colors.blue.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(event.title, style: titleStyle),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.blueGrey[500],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (event.description.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      event.description,
-                      style: TextStyle(
-                        color: Colors.blueGrey[400],
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (isTask)
-              Checkbox(
-                value: event.isCompleted,
-                onChanged: (_) => _toggleTaskCompletion(event),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              )
-            else
-              Icon(Icons.chevron_right, color: Colors.blueGrey[200]),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotesNoteTile(NoteEntry note) {
-    final subtitleParts = <String>[];
-    if (note.date != null) {
-      subtitleParts.add(DateFormat('MMM d, yyyy').format(note.date!));
-    }
-    subtitleParts.add('Note');
-    if (note.addedToCalendar) {
-      subtitleParts.add('On calendar');
-    }
-
-    final subtitle = subtitleParts.join(' • ');
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: const Color(0xFFFFFBF2),
-        border: Border.all(color: Colors.amber[100]!),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.amber[200],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.sticky_note_2, color: Color(0xFF8D6E63), size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  note.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.blueGrey[500],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (note.description.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    note.description,
-                    style: TextStyle(
-                      color: Colors.blueGrey[500],
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -2910,12 +2767,16 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
       return;
     }
 
+    final now = DateTime.now();
     final note = NoteEntry(
+    id: now.microsecondsSinceEpoch.toString(),
       title: title,
       description: _descriptionController.text.trim(),
       category: _selectedCategory,
       date: _addToCalendar ? _selectedDate : null,
-      createdAt: DateTime.now(),
+      createdAt: now,
+      updatedAt: now,
+      isPinned: false,
       addedToCalendar: _addToCalendar,
     );
 
