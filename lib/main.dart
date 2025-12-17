@@ -1052,10 +1052,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 
   Widget _buildNotesBody() {
-    final categories = <String>{
-      ...kCategoryOptions,
-      ..._notes.map((n) => n.category.trim()).where((c) => c.isNotEmpty),
-    }.toList()
+    final categories = _notes
+        .map((n) => n.category.trim())
+        .where((c) => c.isNotEmpty)
+        .toSet()
+        .toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     int countFor(String category) => _notes
