@@ -1990,13 +1990,13 @@ Widget _buildEventTile(Event event) {
   Widget _buildBottomNavigationBar() {
     final textScaleFactor = MediaQuery.textScaleFactorOf(context);
     final estimatedMinHeight = 24 + 4 + (12 * textScaleFactor) + 16;
-    final minHeight = math.max(64.0, estimatedMinHeight);
+    final minHeight = math.max(52.0, estimatedMinHeight);
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
