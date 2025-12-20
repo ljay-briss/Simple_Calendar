@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 part 'note_editor_page.dart';
 part 'notes_folder_page.dart';
 
+// Core data definitions shared across the calendar, tasks, and notes views.
 enum EventType { event, task, note }
 
 extension EventTypeExtension on EventType {
@@ -25,6 +26,7 @@ extension EventTypeExtension on EventType {
   }
 }
 
+// Supported recurrence options for timed events.
 enum RepeatFrequency { none, daily, weekly, monthly }
 
 extension RepeatFrequencyExtension on RepeatFrequency {
@@ -42,10 +44,13 @@ extension RepeatFrequencyExtension on RepeatFrequency {
   }
 }
 
+// Tabs shown in the bottom navigation bar.
 enum HomeTab { calendar, notes, daily }
 
+// Internal toggle for the daily/weekly schedule views on the daily tab.
 enum _ScheduleView { daily, weekly }
 
+// Standard reminder presets offered in the event editor.
 const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   'No reminder': null,
   '5 minutes before': Duration(minutes: 5),
@@ -57,6 +62,7 @@ const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   '1 week before': Duration(days: 7),
 };
 
+// Categories shared between events and notes to keep tagging consistent.
 const List<String> kCategoryOptions = <String>[
   'General',
   'Work',
@@ -263,6 +269,7 @@ class Event {
   }
 }
 
+// Note model representing quick notes and checklists that can live beside events.
 class NoteEntry {
   final String id;
   final String title;
@@ -304,7 +311,7 @@ class NoteEntry {
   }
 
   factory NoteEntry.fromMap(Map<String, dynamic> map) {
-    DateTime? _parseOpt(String? s) {
+    DateTime? parseOpt(String? s) {
       if (s == null || s.isEmpty) return null;
       try {
         return DateTime.parse(s);
@@ -313,7 +320,7 @@ class NoteEntry {
       }
     }
 
-    DateTime _parseOrNow(String? s) {
+    DateTime parseOrNow(String? s) {
       if (s == null || s.isEmpty) return DateTime.now();
       try {
         return DateTime.parse(s);
@@ -322,9 +329,9 @@ class NoteEntry {
       }
     }
 
-    final createdAt = _parseOrNow(map['createdAt'] as String?);
+    final createdAt = parseOrNow(map['createdAt'] as String?);
     final updatedAtStr = map['updatedAt'] as String?;
-    final updatedAt = updatedAtStr == null ? createdAt : _parseOrNow(updatedAtStr);
+    final updatedAt = updatedAtStr == null ? createdAt : parseOrNow(updatedAtStr);
 
     final id = (map['id'] as String?) ?? createdAt.microsecondsSinceEpoch.toString();
 
@@ -337,7 +344,7 @@ class NoteEntry {
       title: (map['title'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
       category: (map['category'] as String?) ?? 'General',
-      date: _parseOpt(map['date'] as String?),
+      date: parseOpt(map['date'] as String?),
       createdAt: createdAt,
       updatedAt: updatedAt,
       isPinned: isPinnedValue is bool ? isPinnedValue : Event._boolFromAny(isPinnedValue),
@@ -377,6 +384,7 @@ class NoteEntry {
   }
 }
 
+// Helper return type used when creating a note optionally linked to a calendar event.
 class NoteResult {
   final NoteEntry note;
   final Event? calendarEvent;
@@ -393,6 +401,7 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
+  // Calendar navigation and displayed data sets.
   DateTime _selectedDate = DateTime.now();
   DateTime _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
   final List<Event> _events = [];
@@ -401,12 +410,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
   HomeTab _currentTab = HomeTab.calendar;
   _ScheduleView _currentScheduleView = _ScheduleView.daily;
 
-
+  // Local persistence keys and cache handle for SharedPreferences.
   SharedPreferences? _cachedPrefs;
   static const String _eventsStorageKey = 'calendar_events';
   static const String _introCardStorageKey = 'calendar_intro_card';
   static const String _notesStorageKey = 'calendar_notes';
 
+  // Hours that bound the daily/weekly time grid views.
   static const int _dayStartHour = 8;
   static const int _dayEndHour = 20;
 
@@ -416,10 +426,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_loadPersistedState());
   }
 
+  // Lazily retrieve shared preferences so disk access happens off the first
+  // build frame and is reused across saves and loads.
   Future<SharedPreferences> _getPrefs() async {
     return _cachedPrefs ??= await SharedPreferences.getInstance();
   }
 
+
+  // Load stored events/notes along with the onboarding card dismissal flag,
+  // parsing each JSON payload defensively so corrupt entries do not crash UI.
   Future<void> _loadPersistedState() async {
     final prefs = await _getPrefs();
     final storedEvents = prefs.getStringList(_eventsStorageKey) ?? [];
@@ -463,6 +478,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
+  // Write the current events list back to disk after creation/edits.
   Future<void> _persistEvents() async {
     final prefs = await _getPrefs();
     final encoded = _events.map((event) => jsonEncode(event.toMap())).toList();
@@ -500,13 +516,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_saveNotes());
   }
 
-
+  // Persist notes list to local storage whenever changes occur.
   Future<void> _saveNotes() async {
     final prefs = await _getPrefs();
     final encoded = _notes.map((note) => jsonEncode(note.toMap())).toList();
     await prefs.setStringList(_notesStorageKey, encoded);
   }
 
+  // Remember whether the intro banner is dismissed so it only shows once.
   Future<void> _persistIntroCard(bool value) async {
     final prefs = await _getPrefs();
     await prefs.setBool(_introCardStorageKey, value);
@@ -532,6 +549,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final eventsForSelectedDate = _getEventsForDate(_selectedDate);
     final freeSlots = _calculateFreeTimeSlots(eventsForSelectedDate);
 
+    // Each tab is rendered independently so the surrounding scaffold stays
+    // consistent while switching between calendar, notes, and daily planner.
     final body = (() {
       switch (_currentTab) {
         case HomeTab.calendar:
@@ -554,6 +573,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildCalendarBody(
       List<Event> eventsForSelectedDate, List<_TimeSlot> freeSlots) {
+    // Overview tab combines the small month picker, daily agenda, and summaries
+    // for free time and scheduled items.
     return Column(
       children: [
         _buildCompactCalendarHeader(),
@@ -593,7 +614,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
 
-
+    // Daily tab focuses on scheduling tools including toggleable daily/weekly
+    // grids and quick-add buttons for events and notes.
     return Column(
       children: [
         Padding(
@@ -751,8 +773,8 @@ Widget _buildWeeklyOverview() {
   // SingleChildScrollView/Column used by the daily page. Using a fixed header
   // height + hourly grid height avoids unbounded Expanded errors.
   const hourHeight = 72.0;
-  final startHour = _dayStartHour;
-  final endHour = _dayEndHour;
+  final startHour = 1;
+  final endHour = 23;
   final totalHours = endHour - startHour + 1;
   final gridHeight = totalHours * hourHeight;
   const headerHeight = 72.0;
@@ -763,7 +785,7 @@ Widget _buildWeeklyOverview() {
     child: Column(
       children: [
         _buildWeeklyHeaderRow(weekDays),
-        const SizedBox(height: 8),
+        const SizedBox(height: 20),
         SizedBox(height: gridHeight, child: _buildWeeklyTimeGrid(weekDays)),
       ],
     ),
@@ -771,110 +793,147 @@ Widget _buildWeeklyOverview() {
 }
 
 Widget _buildWeeklyHeaderRow(List<DateTime> days) {
-  const timeColWidth = 70.0;
+  const timeColWidth = 52.0; // tighter now that times are like 1AM
   final today = DateTime.now();
+  final screenWidth = MediaQuery.of(context).size.width;
+  final dayWidth = (screenWidth - timeColWidth) / 7;
 
-  return Padding(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+  return Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border(
+        bottom: BorderSide(color: Colors.blueGrey.shade200),
+      ),
+    ),
     child: Row(
       children: [
         const SizedBox(width: timeColWidth),
-        Expanded(
-          child: Row(
-            children: [
-              for (final day in days)
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () {
-                      setState(() {
-                        _selectedDate = day;
-                        _currentScheduleView = _ScheduleView.daily;
-                      });
-                    },
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          DateFormat('EEE').format(day).toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.blueGrey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          width: 32,
-                          height: 32,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: DateUtils.isSameDay(day, today)
-                                ? Colors.blue[600]
-                                : Colors.transparent,
-                            border: DateUtils.isSameDay(day, today)
-                                ? null
-                                : Border.all(color: Colors.blueGrey[200]!),
-                          ),
-                          child: Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: DateUtils.isSameDay(day, today)
-                                  ? Colors.white
-                                  : Colors.blueGrey[900],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+        for (final day in days)
+          SizedBox(
+            width: dayWidth,
+            child: _WeeklyHeaderCell(
+              day: day,
+              today: today,
+              selectedDate: _selectedDate,
+              onTap: () {
+                setState(() {
+                  _selectedDate = day;
+                  _currentScheduleView = _ScheduleView.daily;
+                });
+              },
+            ),
           ),
-        ),
       ],
     ),
   );
 }
 
+
+class _WeeklyHeaderCell extends StatelessWidget {
+  final DateTime day;
+  final DateTime today;
+  final DateTime selectedDate;
+  final VoidCallback onTap;
+
+  const _WeeklyHeaderCell({
+    required this.day,
+    required this.today,
+    required this.selectedDate,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isToday = DateUtils.isSameDay(day, today);
+    final isSelected = DateUtils.isSameDay(day, selectedDate);
+
+    // pick a “calendar-like” visual: clean cell + subtle selection
+    final bg = isSelected
+        ? Colors.blue.shade50
+        : Colors.transparent;
+
+    final borderColor = Colors.blueGrey.shade200;
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 56, // consistent cell height like month grid rows
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border(
+            left: BorderSide(color: borderColor),
+            bottom: BorderSide(color: borderColor),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              DateFormat('EEE').format(day).toUpperCase(),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: Colors.blueGrey[600],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: isToday ? Colors.blue[700] : Colors.blueGrey[900],
+              ),
+            ),
+            // small today indicator like many calendar grids
+            if (isToday)
+              Container(
+                margin: const EdgeInsets.only(top: 3),
+                width: 16,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: Colors.blue[600],
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 Widget _buildWeeklyTimeGrid(List<DateTime> days) {
-  const startHour = 5;
+  const startHour = 1;
   const endHour = 23;
-  const hourHeight = 72.0;
+  const hourHeight = 50.0;
   const timeColWidth = 70.0;
-  const minDayWidth = 140.0;
 
   final totalHours = endHour - startHour + 1;
   final gridHeight = totalHours * hourHeight;
 
   final screenWidth = MediaQuery.of(context).size.width;
-  final gridWidth = math.max(screenWidth, timeColWidth + 7 * minDayWidth);
+  final dayWidth = (screenWidth - timeColWidth) / 7;
 
   return SingleChildScrollView(
-    // vertical scroll
     child: SizedBox(
-      height: gridHeight, // ✅ bounded height for Stack + Positioned
-      child: SingleChildScrollView(
-        // horizontal scroll
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: gridWidth, // ✅ bounded width for LayoutBuilder/Stack
-          height: gridHeight,
-          child: _buildWeeklyGridStack(
-            days: days,
-            startHour: startHour,
-            endHour: endHour,
-            hourHeight: hourHeight,
-            timeColWidth: timeColWidth,
-            gridWidth: gridWidth,
-          ),
-        ),
+      width: screenWidth,   // ✅ lock to screen
+      height: gridHeight,
+      child: _buildWeeklyGridStack(
+        days: days,
+        startHour: startHour,
+        endHour: endHour,
+        hourHeight: hourHeight,
+        timeColWidth: timeColWidth,
+        gridWidth: screenWidth, // ✅ same
+        dayWidth: dayWidth,     // ✅ pass this in
       ),
     ),
   );
 }
+
 
 
 List<Widget> _buildWeeklyNowLine(
@@ -927,7 +986,9 @@ Widget _buildWeeklyGridStack({
   required double hourHeight,
   required double timeColWidth,
   required double gridWidth,
-}) {
+  required double dayWidth, // ✅ new
+})
+ {
   final totalHours = endHour - startHour + 1;
   final dayWidth = (gridWidth - timeColWidth) / 7;
   final gridHeight = totalHours * hourHeight;
@@ -1497,7 +1558,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                     ),
                   ),
                 );
-              }).toList(),
+              }),
             ],
           ),
         ),
@@ -1506,16 +1567,14 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
   }
 
   String _formatHourLabel(int hour) {
-    final time = TimeOfDay(hour: hour, minute: 0);
-    return time.format(context).toUpperCase();
+    // Compact label: e.g. 1AM, 12PM — omit ":00" to save horizontal space.
+    final isPm = hour >= 12;
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    return '$displayHour${isPm ? 'PM' : 'AM'}';
   }
 
   String _formatEventTimeRange(TimeOfDay start, TimeOfDay end) {
-    final startTime = DateTime(0, 1, 1, start.hour, start.minute);
-    final endTime = DateTime(0, 1, 1, end.hour, end.minute);
-    final startLabel = DateFormat.jm().format(startTime);
-    final endLabel = DateFormat.jm().format(endTime);
-    return '$startLabel - $endLabel';
+    return '${_formatTimeOfDay(start)} - ${_formatTimeOfDay(end)}';
   }
 
   IconData _iconForEventType(EventType type) {
@@ -2642,7 +2701,16 @@ Widget _buildEventTile(Event event) {
   }
 
   String _formatTime(DateTime time) {
-    return DateFormat('h:mm a').format(time);
+    // Compact time formatting: omit ":00" when minutes == 0 and remove
+    // the space before AM/PM to save horizontal space (e.g. "1AM", "1:30AM").
+    final hour24 = time.hour;
+    final minute = time.minute;
+    final isPm = hour24 >= 12;
+    final displayHour = hour24 % 12 == 0 ? 12 : hour24 % 12;
+    final ampm = isPm ? 'PM' : 'AM';
+    if (minute == 0) return '$displayHour$ampm';
+    final minStr = minute.toString().padLeft(2, '0');
+    return '$displayHour:$minStr$ampm';
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
@@ -2920,7 +2988,6 @@ class _EventTypeTabs extends StatelessWidget {
   const _EventTypeTabs({
     required this.selected,
     required this.onSelected,
-    super.key,
   });
 
   final EventType selected;
@@ -2978,7 +3045,7 @@ class _EventTypeTabs extends StatelessWidget {
 }
 
 class _DialogHeader extends StatelessWidget {
-  const _DialogHeader({required this.title, super.key});
+  const _DialogHeader({required this.title});
 
   final String title;
 
@@ -4193,7 +4260,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFFF7F8FA),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.blueGrey.shade100!),
+          border: Border.all(color: Colors.blueGrey.shade100),
         ),
         child: Row(
           children: [
@@ -4840,7 +4907,6 @@ class _ProfileOptionTile extends StatelessWidget {
     required this.accentColor,
     required this.cardColor,
     required this.borderColor,
-    this.onTap,
   });
 
   final IconData icon;
