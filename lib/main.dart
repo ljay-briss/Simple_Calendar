@@ -50,6 +50,10 @@ enum HomeTab { calendar, notes, daily }
 // Internal toggle for the daily/weekly schedule views on the daily tab.
 enum _ScheduleView { daily, weekly }
 
+// Weekly view tabs to switch between schedule and free time breakdowns.
+enum _WeeklyTab { schedule, freeTime }
+
+
 // Standard reminder presets offered in the event editor.
 const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   'No reminder': null,
@@ -409,6 +413,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool _showIntroCard = true;
   HomeTab _currentTab = HomeTab.calendar;
   _ScheduleView _currentScheduleView = _ScheduleView.daily;
+  _WeeklyTab _currentWeeklyTab = _WeeklyTab.schedule;
 
   // Local persistence keys and cache handle for SharedPreferences.
   SharedPreferences? _cachedPrefs;
@@ -547,7 +552,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final eventsForSelectedDate = _getEventsForDate(_selectedDate);
-    final freeSlots = _calculateFreeTimeSlots(eventsForSelectedDate);
+    final freeSlots =
+        _calculateFreeTimeSlots(eventsForSelectedDate, targetDate: _selectedDate);
 
     // Each tab is rendered independently so the surrounding scaffold stays
     // consistent while switching between calendar, notes, and daily planner.
@@ -764,249 +770,417 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
-Widget _buildWeeklyOverview() {
-  // Google Calendar style: week grid, not summary cards
-  final weekStart = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
-  final weekDays = List.generate(7, (i) => weekStart.add(Duration(days: i)));
+  Widget _buildWeeklyOverview() {
+    // Google Calendar style: week grid, not summary cards
+    final weekStart = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+    final weekDays = List.generate(7, (i) => weekStart.add(Duration(days: i)));
 
-  // Keep the visual proportions of the calendar grid consistent and avoid the
-  // blank gutter that appeared when the height calculation did not match the
-  // grid cell height.
-  const startHour = 1;
-  const endHour = 23;
-  const hourHeight = 50.0;
-  final totalHours = endHour - startHour + 1;
-  final gridHeight = totalHours * hourHeight;
+    // Keep the visual proportions of the calendar grid consistent and avoid the
+    // blank gutter that appeared when the height calculation did not match the
+    // grid cell height.
+    const startHour = 1;
+    const endHour = 23;
+    const hourHeight = 50.0;
+    final totalHours = endHour - startHour + 1;
+    final gridHeight = totalHours * hourHeight;
 
-
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _buildWeeklyHeaderRow(weekDays),
-      const SizedBox(height: 12),
-      SizedBox(
-        height: gridHeight,
-        child: _buildWeeklyTimeGrid(
-          weekDays,
-          startHour: startHour,
-          endHour: endHour,
-          hourHeight: hourHeight,
-        ),
-      ),
-      const SizedBox(height: 16),
-      _buildWeeklySummarySection(weekDays),
-    ],
-  );
-}
-
-Widget _buildWeeklyHeaderRow(List<DateTime> days) {
-  const timeColWidth = 52.0;
-  final today = DateTime.now();
-
-  return Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border(
-        bottom: BorderSide(color: Colors.blueGrey.shade200),
-      ),
-    ),
-    child: Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(width: timeColWidth),
-        for (final day in days)
-          Expanded(
-            child: _WeeklyHeaderCell(
-              day: day,
-              today: today,
-              selectedDate: _selectedDate,
-              onTap: () {
-                setState(() {
-                  _selectedDate = day;
-                  _currentScheduleView = _ScheduleView.daily;
-                });
-              },
+        _buildWeeklyTabToggle(),
+        const SizedBox(height: 12),
+        if (_currentWeeklyTab == _WeeklyTab.schedule) ...[
+          _buildWeeklyHeaderRow(weekDays),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: gridHeight,
+            child: _buildWeeklyTimeGrid(
+              weekDays,
+              startHour: startHour,
+              endHour: endHour,
+              hourHeight: hourHeight,
             ),
           ),
+          const SizedBox(height: 16),
+          _buildWeeklySummarySection(weekDays),
+        ] else
+          _buildWeeklyFreeTimeSection(weekDays),
       ],
-    ),
-  );
-}
+    );
+  }
 
-
-
-
-Widget _buildWeeklyTimeGrid(
-  List<DateTime> days, {
-  required int startHour,
-  required int endHour,
-  required double hourHeight,
-}) {
-  const timeColWidth = 52.0;
-
-  final totalHours = endHour - startHour + 1;
-  final gridHeight = totalHours * hourHeight;
-
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final gridWidth = constraints.maxWidth;
-      final dayWidth = (gridWidth - timeColWidth) / 7;
-
-      return SizedBox(
-        width: gridWidth,
-        height: gridHeight,
-        child: _buildWeeklyGridStack(
-          days: days,
-          startHour: startHour,
-          endHour: endHour,
-          hourHeight: hourHeight,
-          timeColWidth: timeColWidth,
-          gridWidth: gridWidth,
-          dayWidth: dayWidth,
-        ),
-      );
-    },
-  );
-}
-
-Widget _buildWeeklySummarySection(List<DateTime> weekDays) {
-  final weekStart = weekDays.first;
-  final weekEnd = weekDays.last;
-
-  final eventsByDay = weekDays
-      .map((day) => MapEntry(day, _getEventsForDate(day)))
-      .where((entry) => entry.value.isNotEmpty)
-      .toList();
-
-  return _OverviewSection(
-    title:
-        'Week of ${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekEnd)}',
-    child: eventsByDay.isEmpty
-        ? const _EmptyOverviewMessage(
-            message: 'No events scheduled this week yet.',
-          )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (int i = 0; i < eventsByDay.length; i++) ...[
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    DateFormat('EEEE, MMM d').format(eventsByDay[i].key),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                ...eventsByDay[i].value.map(_buildEventTile),
-                if (i != eventsByDay.length - 1) const SizedBox(height: 8),
-              ],
-            ],
-          ),
-  );
-}
-
-
-List<Widget> _buildWeeklyNowLine(
-  List<DateTime> days,
-  double timeColWidth,
-  double dayWidth,
-  int startHour,
-  int endHour,
-  double hourHeight,
-) {
-  final now = DateTime.now();
-  final todayIndex = days.indexWhere((d) => DateUtils.isSameDay(d, now));
-  if (todayIndex == -1) return [];
-
-  final totalMinutes = (endHour - startHour + 1) * 60;
-  final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
-  if (nowMinutes < 0 || nowMinutes > totalMinutes) return [];
-
-  final top = ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight;
-  final left = timeColWidth + (todayIndex * dayWidth);
-
-  return [
-    Positioned(
-      top: top,
-      left: left,
-      width: dayWidth,
+  Widget _buildWeeklyTabToggle() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8E3FF)),
+      ),
       child: Row(
         children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: Colors.red[600],
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(child: Container(height: 1.5, color: Colors.red[300])),
+          _buildWeeklyTabButton('Schedule', _WeeklyTab.schedule, Icons.view_week_rounded),
+          const SizedBox(width: 8),
+          _buildWeeklyTabButton('Free time', _WeeklyTab.freeTime, Icons.timer_outlined),
         ],
       ),
-    ),
-  ];
-}
+    );
+  }
 
 
-Widget _buildWeeklyGridStack({
-  required List<DateTime> days,
-  required int startHour,
-  required int endHour,
-  required double hourHeight,
-  required double timeColWidth,
-  required double gridWidth,
-  required double dayWidth,
-}) {
-  final totalHours = endHour - startHour + 1;
-  final gridHeight = totalHours * hourHeight;
+  Widget _buildWeeklyTabButton(String label, _WeeklyTab tab, IconData icon) {
+    final isActive = _currentWeeklyTab == tab;
 
-  const double lineOffset = 10; // MUST match the hour-line margin top
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          if (!isActive) {
+            setState(() => _currentWeeklyTab = tab);
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white : const Color(0xFFDDE7FB),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: isActive
+                ? const [
+                    BoxShadow(
+                      color: Color(0x142C3A4B),
+                      blurRadius: 10,
+                      offset: Offset(0, 6),
+                    ),
+                  ]
+                : [],
+            border: Border.all(
+              color: isActive ? const Color(0xFFBFD4FF) : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: isActive ? Colors.blue[700] : Colors.blueGrey[600]),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: isActive ? Colors.blue[800] : Colors.blueGrey[700],                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-  return SizedBox(
-    width: gridWidth,
-    height: gridHeight,
-    child: Stack(
-      children: [
-        // hour grid
-        Column(
-          children: List.generate(totalHours, (i) {
-            final hour = startHour + i;
-            return SizedBox(
-              height: hourHeight,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: timeColWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 6, right: 8),
-                      child: Text(
-                        _formatHourLabel(hour),
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: TextStyle(
-                          color: Colors.blueGrey[400],
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
+  Widget _buildWeeklyHeaderRow(List<DateTime> days) {
+    const timeColWidth = 52.0;
+    final today = DateTime.now();
+
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.blueGrey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: timeColWidth),
+          for (final day in days)
+            Expanded(
+              child: _WeeklyHeaderCell(
+                day: day,
+                today: today,
+                selectedDate: _selectedDate,
+                onTap: () {
+                  setState(() {
+                    _selectedDate = day;
+                    _currentScheduleView = _ScheduleView.daily;
+                  });
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildWeeklyTimeGrid(
+    List<DateTime> days, {
+    required int startHour,
+    required int endHour,
+    required double hourHeight,
+  }) {
+    const timeColWidth = 52.0;
+
+    final totalHours = endHour - startHour + 1;
+    final gridHeight = totalHours * hourHeight;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gridWidth = constraints.maxWidth;
+        final dayWidth = (gridWidth - timeColWidth) / 7;
+
+        return SizedBox(
+          width: gridWidth,
+          height: gridHeight,
+          child: _buildWeeklyGridStack(
+            days: days,
+            startHour: startHour,
+            endHour: endHour,
+            hourHeight: hourHeight,
+            timeColWidth: timeColWidth,
+            gridWidth: gridWidth,
+            dayWidth: dayWidth,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildWeeklySummarySection(List<DateTime> weekDays) {
+    final weekStart = weekDays.first;
+    final weekEnd = weekDays.last;
+
+    final eventsByDay = weekDays
+        .map((day) => MapEntry(day, _getEventsForDate(day)))
+        .where((entry) => entry.value.isNotEmpty)
+        .toList();
+
+    return _OverviewSection(
+      title:
+          'Week of ${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekEnd)}',
+      child: eventsByDay.isEmpty
+          ? const _EmptyOverviewMessage(
+              message: 'No events scheduled this week yet.',
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (int i = 0; i < eventsByDay.length; i++) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      DateFormat('EEEE, MMM d').format(eventsByDay[i].key),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
                       ),
                     ),
                   ),
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.only(top: lineOffset),
-                      height: 1,
-                      color: const Color(0xFFE4EAF3),
+                  ...eventsByDay[i].value.map(_buildEventTile),
+                  if (i != eventsByDay.length - 1) const SizedBox(height: 8),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _buildWeeklyFreeTimeSection(List<DateTime> weekDays) {
+    final freeSlotsByDay = weekDays
+        .map((day) => MapEntry(day, _calculateFreeTimeSlots(_getEventsForDate(day), targetDate: day)))
+        .toList();
+
+    final hasAnyFreeTime = freeSlotsByDay.any((entry) => entry.value.isNotEmpty);
+
+    return _OverviewSection(
+      title: 'Free time this week',
+      child: hasAnyFreeTime
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (int i = 0; i < freeSlotsByDay.length; i++) ...[
+                  _buildWeeklyFreeTimeCard(freeSlotsByDay[i].key, freeSlotsByDay[i].value),
+                  if (i != freeSlotsByDay.length - 1) const SizedBox(height: 12),
+                ],
+              ],
+            )
+          : const _EmptyOverviewMessage(
+              message: 'No free time detected this week. Add time ranges to see openings.',
+            ),
+    );
+  }
+
+  Widget _buildWeeklyFreeTimeCard(DateTime date, List<_TimeSlot> slots) {
+    final totalDuration = slots.fold<Duration>(Duration.zero, (sum, slot) => sum + slot.duration);
+    final dateLabel = DateFormat('EEE, MMM d').format(date);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE4EAF3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.green[500],
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  dateLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              if (totalDuration > Duration.zero)
+                _buildSummaryChip(Icons.timer_outlined, _formatDuration(totalDuration)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (slots.isEmpty)
+            Text(
+              'No free time',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.blueGrey[500],
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final slot in slots)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.timer_outlined, size: 16, color: Colors.green[600]),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_formatTime(slot.start)} - ${_formatTime(slot.end)} · ${_formatDuration(slot.duration)}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            );
-          }),
-        ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 
+
+  List<Widget> _buildWeeklyNowLine(
+    List<DateTime> days,
+    double timeColWidth,
+    double dayWidth,
+    int startHour,
+    int endHour,
+    double hourHeight,
+  ) {
+    final now = DateTime.now();
+    final todayIndex = days.indexWhere((d) => DateUtils.isSameDay(d, now));
+    if (todayIndex == -1) return [];
+
+    final totalMinutes = (endHour - startHour + 1) * 60;
+    final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
+    if (nowMinutes < 0 || nowMinutes > totalMinutes) return [];
+
+    final top = ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight;
+    final left = timeColWidth + (todayIndex * dayWidth);
+
+    return [
+      Positioned(
+        top: top,
+        left: left,
+        width: dayWidth,
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: Colors.red[600],
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(child: Container(height: 1.5, color: Colors.red[300])),
+          ],
+        ),
+      ),
+    ];
+  }
+
+
+  Widget _buildWeeklyGridStack({
+    required List<DateTime> days,
+    required int startHour,
+    required int endHour,
+    required double hourHeight,
+    required double timeColWidth,
+    required double gridWidth,
+    required double dayWidth,
+  }) {
+    final totalHours = endHour - startHour + 1;
+    final gridHeight = totalHours * hourHeight;
+
+    const double lineOffset = 10; // MUST match the hour-line margin top
+
+    return SizedBox(
+      width: gridWidth,
+      height: gridHeight,
+      child: Stack(
+        children: [
+          // hour grid
+          Column(
+            children: List.generate(totalHours, (i) {
+              final hour = startHour + i;
+              return SizedBox(
+                height: hourHeight,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: timeColWidth,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6, right: 8),
+                        child: Text(
+                          _formatHourLabel(hour),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(
+                            color: Colors.blueGrey[400],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: lineOffset),
+                        height: 1,
+                        color: const Color(0xFFE4EAF3),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
         // vertical separators
         Positioned(
           left: timeColWidth,
@@ -2501,7 +2675,10 @@ Widget _buildEventTile(Event event) {
   List<Event> _getEventsForDate(DateTime date) {
     final targetDate = DateTime(date.year, date.month, date.day);
     return _events
-        .where((event) => _occursOnDate(event, targetDate))
+        .where(
+          (event) =>
+              event.type != EventType.note && _occursOnDate(event, targetDate),
+        )
         .toList()
       ..sort((a, b) {
         if (a.startTime == null && b.startTime == null) return 0;
@@ -2588,23 +2765,26 @@ Widget _buildEventTile(Event event) {
     }
   }
 
-  List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events) {
+  List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events, {DateTime? targetDate}) {
     final blockingEvents =
         events.where((event) => event.type != EventType.note).toList();
 
-    if (blockingEvents.any((event) => !event.hasTimeRange)) {      return [];
+    if (blockingEvents.any((event) => !event.hasTimeRange)) {
+      return [];
     }
 
+    final date = targetDate ?? _selectedDate;
+
     final dayStart = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
+      date.year,
+      date.month,
+      date.day,
       _dayStartHour,
     );
     final dayEnd = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
+      date.year,
+      date.month,
+      date.day,
       _dayEndHour,
     );
 
@@ -2612,8 +2792,8 @@ Widget _buildEventTile(Event event) {
         .where((event) => event.hasTimeRange)
         .map(
           (event) => _TimeSlot(
-            start: _dateWithTime(_selectedDate, event.startTime!),
-            end: _dateWithTime(_selectedDate, event.endTime!),
+            start: _dateWithTime(date, event.startTime!),
+            end: _dateWithTime(date, event.endTime!),
           ),
         )
         .where((slot) => slot.end.isAfter(slot.start))
