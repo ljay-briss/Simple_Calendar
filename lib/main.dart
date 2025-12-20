@@ -388,13 +388,6 @@ class NoteEntry {
   }
 }
 
-// Helper return type used when creating a note optionally linked to a calendar event.
-class NoteResult {
-  final NoteEntry note;
-  final Event? calendarEvent;
-
-  const NoteResult({required this.note, this.calendarEvent});
-}
 
 
 class CalendarScreen extends StatefulWidget {
@@ -475,18 +468,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
     setState(() {
       _events
         ..clear()
-        ..addAll(loadedEvents);
+        ..addAll(loadedEvents.where((event) => event.type != EventType.note));
       _notes
         ..clear()
         ..addAll(loadedNotes);
       _showIntroCard = showIntroPref ?? _events.isEmpty;
     });
+    unawaited(_persistEvents());
   }
 
   // Write the current events list back to disk after creation/edits.
   Future<void> _persistEvents() async {
     final prefs = await _getPrefs();
-    final encoded = _events.map((event) => jsonEncode(event.toMap())).toList();
+    final encoded = _events
+        .where((event) => event.type != EventType.note)
+        .map((event) => jsonEncode(event.toMap()))
+        .toList();
     await prefs.setStringList(_eventsStorageKey, encoded);
   }
 
@@ -535,18 +532,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _handleEventAdded(Event event) {
+    if (event.type == EventType.note) {
+      return;
+    }
     setState(() {
       _events.add(event);
     });
     unawaited(_persistEvents());
   }
 
-  void _handleNoteAdded(NoteEntry note, {Event? linkedEvent}) {
+  void _handleNoteAdded(NoteEntry note) {
     _upsertNote(note);
-
-    if (linkedEvent != null) {
-      _handleEventAdded(linkedEvent);
-    }
   }
 
   @override
@@ -1961,7 +1957,11 @@ Widget _buildCompactCalendarHeader() {
 
     final selectedEvent = await showSearch<Event?>(
       context: context,
-      delegate: EventSearchDelegate(events: List<Event>.from(_events)),
+        delegate: EventSearchDelegate(
+        events: List<Event>.from(
+          _events.where((event) => event.type != EventType.note),
+        ),
+      ),
     );
 
     if (selectedEvent != null) {
@@ -2893,22 +2893,18 @@ Widget _buildEventTile(Event event) {
   }
 
   Future<void> _showAddNoteDialog() async {
-    final result = await showDialog<NoteResult>(
+    final result = await showDialog<NoteEntry>(
       context: context,
-      builder: (context) => AddNoteDialog(
-        initialDate: _selectedDate,
-      ),
+      builder: (context) => const AddNoteDialog(),
     );
 
     if (result != null) {
-      _handleNoteAdded(result.note, linkedEvent: result.calendarEvent);
-      final message = result.calendarEvent != null
-          ? 'Note saved and added to your calendar!'
-          : 'Note saved.';
+      _handleNoteAdded(result);
+      const message = 'Note saved.';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+          const SnackBar(content: Text(message)),
+         );
       }
     }
   }
@@ -3220,8 +3216,9 @@ class _EventTypeTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final eventTypes = EventType.values.where((type) => type != EventType.note);
     return Row(
-      children: EventType.values.map((type) {
+      children: eventTypes.map((type) {
         final isSelected = type == selected;
         return Expanded(
           child: Padding(
@@ -3307,9 +3304,7 @@ class _DialogHeader extends StatelessWidget {
 }
 
 class AddNoteDialog extends StatefulWidget {
-  const AddNoteDialog({this.initialDate, super.key});
-
-  final DateTime? initialDate;
+  const AddNoteDialog({super.key});
 
   @override
   State<AddNoteDialog> createState() => _AddNoteDialogState();
@@ -3319,26 +3314,19 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   String _selectedCategory = kCategoryOptions.first;
-  DateTime? _selectedDate;
-  bool _addToCalendar = false;
+
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController();
     _descriptionController = TextEditingController();
-    if (widget.initialDate != null) {
-      final d = widget.initialDate!;
-      _selectedDate = DateTime(d.year, d.month, d.day);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-    final dateLabel = _selectedDate != null
-        ? DateFormat('EEE, MMM d, yyyy').format(_selectedDate!)
-        : 'Choose a date';
+
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -3422,34 +3410,7 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        SwitchListTile.adaptive(
-                          title: const Text('Add to calendar'),
-                          subtitle: const Text(
-                              'Adds this note to your schedule as an all-day item.'),
-                          value: _addToCalendar,
-                          onChanged: (value) {
-                            setState(() {
-                              _addToCalendar = value;
-                              if (value) {
-                                final base = _selectedDate ??
-                                    widget.initialDate ??
-                                    DateTime.now();
-                                _selectedDate = DateTime(
-                                  base.year,
-                                  base.month,
-                                  base.day,
-                                );
-                              } else {
-                                _selectedDate = null;
-                              }
-                            });
-                          },
-                        ),
-                        if (_addToCalendar) ...[
-                          const SizedBox(height: 8),
-                          _buildDateSelector(dateLabel),
-                        ],
-                        const SizedBox(height: 16),
+
                         TextField(
                           controller: _descriptionController,
                           minLines: 3,
@@ -3500,51 +3461,6 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
     );
   }
 
-  Widget _buildDateSelector(String dateLabel) {
-    return InkWell(
-      onTap: _pickDate,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF7EB),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.orange[200]!),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.calendar_today_outlined, color: Colors.orange[600]),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                dateLabel,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.orange[800],
-                ),
-              ),
-            ),
-            Icon(Icons.keyboard_arrow_down, color: Colors.orange[400]),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? widget.initialDate ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 5),
-    );
-    if (selected != null) {
-      setState(() {
-        _selectedDate = DateTime(selected.year, selected.month, selected.day);
-      });
-    }
-  }
 
   void _save() {
     final title = _titleController.text.trim();
@@ -3555,41 +3471,21 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
       return;
     }
 
-    if (_addToCalendar && _selectedDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choose a date to add this note to the calendar.')),
-      );
-      return;
-    }
 
     final now = DateTime.now();
     final note = NoteEntry(
-    id: now.microsecondsSinceEpoch.toString(),
+      id: now.microsecondsSinceEpoch.toString(),
       title: title,
       description: _descriptionController.text.trim(),
       category: _selectedCategory,
-      date: _addToCalendar ? _selectedDate : null,
+      date: null,
       createdAt: now,
       updatedAt: now,
       isPinned: false,
-      addedToCalendar: _addToCalendar,
+      addedToCalendar: false,
     );
 
-    Event? calendarEvent;
-    if (_addToCalendar && _selectedDate != null) {
-      calendarEvent = Event(
-        title: title,
-        description: _descriptionController.text.trim(),
-        date: _selectedDate!,
-        category: _selectedCategory,
-        type: EventType.note,
-        reminder: null,
-        repeatFrequency: RepeatFrequency.none,
-        isCompleted: false,
-      );
-    }
-
-    Navigator.of(context).pop(NoteResult(note: note, calendarEvent: calendarEvent));
+    Navigator.of(context).pop(note);
   }
 
   @override
@@ -4150,7 +4046,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
     final init = widget.initial;
     _title = TextEditingController(text: init.title);
     _desc = TextEditingController(text: init.description);
-    _type = init.type;
+    _type = init.type == EventType.note ? EventType.event : init.type;
     _category = init.category;
     _reminderLabel = reminderLabelFromDuration(init.reminder);
     _repeatFrequency = init.repeatFrequency;
