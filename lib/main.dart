@@ -793,10 +793,8 @@ Widget _buildWeeklyOverview() {
 }
 
 Widget _buildWeeklyHeaderRow(List<DateTime> days) {
-  const timeColWidth = 45.0; // tighter now that times are like 1AM
+  const timeColWidth = 52.0;
   final today = DateTime.now();
-  final screenWidth = MediaQuery.of(context).size.width;
-  final dayWidth = (screenWidth - timeColWidth) / 7;
 
   return Container(
     decoration: BoxDecoration(
@@ -809,8 +807,7 @@ Widget _buildWeeklyHeaderRow(List<DateTime> days) {
       children: [
         const SizedBox(width: timeColWidth),
         for (final day in days)
-          SizedBox(
-            width: dayWidth,
+          Expanded(
             child: _WeeklyHeaderCell(
               day: day,
               today: today,
@@ -830,34 +827,38 @@ Widget _buildWeeklyHeaderRow(List<DateTime> days) {
 
 
 
+
 Widget _buildWeeklyTimeGrid(List<DateTime> days) {
   const startHour = 1;
   const endHour = 23;
   const hourHeight = 50.0;
-  const timeColWidth = 45.0;
+  const timeColWidth = 52.0;
 
   final totalHours = endHour - startHour + 1;
   final gridHeight = totalHours * hourHeight;
 
-  final screenWidth = MediaQuery.of(context).size.width;
-  final dayWidth = (screenWidth - timeColWidth) / 7;
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final gridWidth = constraints.maxWidth;
+      final dayWidth = (gridWidth - timeColWidth) / 7;
 
-  return SingleChildScrollView(
-    child: SizedBox(
-      width: screenWidth,   // ✅ lock to screen
-      height: gridHeight,
-      child: _buildWeeklyGridStack(
-        days: days,
-        startHour: startHour,
-        endHour: endHour,
-        hourHeight: hourHeight,
-        timeColWidth: timeColWidth,
-        gridWidth: screenWidth, // ✅ same
-        dayWidth: dayWidth,     // ✅ pass this in
-      ),
-    ),
+      return SizedBox(
+        width: gridWidth,
+        height: gridHeight,
+        child: _buildWeeklyGridStack(
+          days: days,
+          startHour: startHour,
+          endHour: endHour,
+          hourHeight: hourHeight,
+          timeColWidth: timeColWidth,
+          gridWidth: gridWidth,
+          dayWidth: dayWidth,
+        ),
+      );
+    },
   );
 }
+
 
 
 
