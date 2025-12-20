@@ -785,7 +785,7 @@ Widget _buildWeeklyOverview() {
     child: Column(
       children: [
         _buildWeeklyHeaderRow(weekDays),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
         SizedBox(height: gridHeight, child: _buildWeeklyTimeGrid(weekDays)),
       ],
     ),
@@ -793,7 +793,7 @@ Widget _buildWeeklyOverview() {
 }
 
 Widget _buildWeeklyHeaderRow(List<DateTime> days) {
-  const timeColWidth = 52.0; // tighter now that times are like 1AM
+  const timeColWidth = 45.0; // tighter now that times are like 1AM
   final today = DateTime.now();
   final screenWidth = MediaQuery.of(context).size.width;
   final dayWidth = (screenWidth - timeColWidth) / 7;
@@ -829,87 +829,12 @@ Widget _buildWeeklyHeaderRow(List<DateTime> days) {
 }
 
 
-class _WeeklyHeaderCell extends StatelessWidget {
-  final DateTime day;
-  final DateTime today;
-  final DateTime selectedDate;
-  final VoidCallback onTap;
-
-  const _WeeklyHeaderCell({
-    required this.day,
-    required this.today,
-    required this.selectedDate,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isToday = DateUtils.isSameDay(day, today);
-    final isSelected = DateUtils.isSameDay(day, selectedDate);
-
-    // pick a “calendar-like” visual: clean cell + subtle selection
-    final bg = isSelected
-        ? Colors.blue.shade50
-        : Colors.transparent;
-
-    final borderColor = Colors.blueGrey.shade200;
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        height: 56, // consistent cell height like month grid rows
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border(
-            left: BorderSide(color: borderColor),
-            bottom: BorderSide(color: borderColor),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              DateFormat('EEE').format(day).toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: Colors.blueGrey[600],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${day.day}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: isToday ? Colors.blue[700] : Colors.blueGrey[900],
-              ),
-            ),
-            // small today indicator like many calendar grids
-            if (isToday)
-              Container(
-                margin: const EdgeInsets.only(top: 3),
-                width: 16,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: Colors.blue[600],
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 
 Widget _buildWeeklyTimeGrid(List<DateTime> days) {
   const startHour = 1;
   const endHour = 23;
   const hourHeight = 50.0;
-  const timeColWidth = 70.0;
+  const timeColWidth = 45.0;
 
   final totalHours = endHour - startHour + 1;
   final gridHeight = totalHours * hourHeight;
@@ -986,150 +911,142 @@ Widget _buildWeeklyGridStack({
   required double hourHeight,
   required double timeColWidth,
   required double gridWidth,
-  required double dayWidth, // ✅ new
-})
- {
+  required double dayWidth,
+}) {
   final totalHours = endHour - startHour + 1;
-  final dayWidth = (gridWidth - timeColWidth) / 7;
   final gridHeight = totalHours * hourHeight;
 
-  return Stack(
-    children: [
-      // hour grid
-      Column(
-        children: List.generate(totalHours, (i) {
-          final hour = startHour + i;
-          return SizedBox(
-            height: hourHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: timeColWidth,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 6, right: 8),
-                    child: Text(
-                      _formatHourLabel(hour),
-                      style: TextStyle(
-                        color: Colors.blueGrey[400],
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
+  const double lineOffset = 10; // MUST match the hour-line margin top
+
+  return SizedBox(
+    width: gridWidth,
+    height: gridHeight,
+    child: Stack(
+      children: [
+        // hour grid
+        Column(
+          children: List.generate(totalHours, (i) {
+            final hour = startHour + i;
+            return SizedBox(
+              height: hourHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: timeColWidth,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 6, right: 8),
+                      child: Text(
+                        _formatHourLabel(hour),
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        style: TextStyle(
+                          color: Colors.blueGrey[400],
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 10),
-                    height: 1,
-                    color: const Color(0xFFE4EAF3),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ),
-
-      // vertical separators
-      Positioned(
-        left: timeColWidth,
-        top: 0,
-        bottom: 0,
-        child: SizedBox(
-          width: gridWidth - timeColWidth,
-          child: Row(
-            children: List.generate(7, (_) {
-              return Expanded(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      right: BorderSide(color: Color(0xFFE7EDF6)),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: lineOffset),
+                      height: 1,
+                      color: const Color(0xFFE4EAF3),
                     ),
                   ),
-                ),
-              );
-            }),
+                ],
+              ),
+            );
+          }),
+        ),
+
+        // vertical separators
+        Positioned(
+          left: timeColWidth,
+          top: 0,
+          bottom: 0,
+          child: SizedBox(
+            width: gridWidth - timeColWidth,
+            child: Row(
+              children: List.generate(7, (_) {
+                return Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        right: BorderSide(color: Color(0xFFE7EDF6)),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
           ),
         ),
-      ),
 
-      // events
-      for (int dayIndex = 0; dayIndex < 7; dayIndex++)
-        ..._getEventsForDate(days[dayIndex]).map((event) {
-          final start = event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
-          final end = event.endTime ??
-              TimeOfDay(hour: math.min(start.hour + 1, endHour), minute: start.minute);
+        // events — snapped to the visible grid lines
+        for (int dayIndex = 0; dayIndex < 7; dayIndex++)
+          ..._getEventsForDate(days[dayIndex]).map((event) {
+            final start =
+                event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
+            final end = event.endTime ??
+                TimeOfDay(
+                  hour: math.min(start.hour + 1, endHour),
+                  minute: 0,
+                );
 
-          final totalMinutes = (endHour - startHour + 1) * 60;
-          final startMinutes = ((start.hour - startHour) * 60) + start.minute;
-          final endMinutes = ((end.hour - startHour) * 60) + end.minute;
+            // snap to full hours
+            final snappedStartHour = start.hour.clamp(startHour, endHour);
+            final snappedEndHour = end.hour.clamp(snappedStartHour + 1, endHour + 1);
 
-          final clampedStart = math.max(0, startMinutes);
-          final clampedEnd = math.max(
-            clampedStart + 30,
-            math.min(endMinutes, totalMinutes),
-          );
+            // IMPORTANT: top includes lineOffset so it aligns to the drawn grid line
+            final top = ((snappedStartHour - startHour) * hourHeight) + lineOffset;
+            final height = (snappedEndHour - snappedStartHour) * hourHeight;
 
-          final top = (clampedStart / 60) * hourHeight;
-          final height = ((clampedEnd - clampedStart) / 60) * hourHeight;
+            final left = timeColWidth + (dayIndex * dayWidth);
 
-          final left = timeColWidth + (dayIndex * dayWidth) + 6;
-
-          return Positioned(
-            top: top,
-            left: left,
-            width: dayWidth - 12,
-            height: math.max(44, height),
-            child: _buildWeeklyEventBlock(event, start, end),
-          );
-        }),
-    ],
+            return Positioned(
+              top: top,
+              left: left,
+              width: dayWidth,
+              height: height,
+              child: _buildWeeklyEventBlock(event, start, end),
+            );
+          }),
+      ],
+    ),
   );
 }
+
+
+
+
+
 
 
 Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
-  final timeText = _formatEventTimeRange(start, end);
-
   return Container(
-    padding: const EdgeInsets.all(8),
+    padding: const EdgeInsets.all(5),
     decoration: BoxDecoration(
       color: Colors.blue[600],
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(5),
     ),
     child: DefaultTextStyle(
       style: const TextStyle(color: Colors.white),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            event.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            timeText,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-          if (event.category.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              event.category,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11),
-            ),
-          ],
-        ],
+      child: Text(
+        event.title,
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
       ),
     ),
   );
 }
+
+
 
 
   Widget _buildWeeklyDayCard(DateTime date, List<Event> events) {
@@ -2820,6 +2737,83 @@ Widget _buildEventTile(Event event) {
     );
   }
 }
+
+class _WeeklyHeaderCell extends StatelessWidget {
+  final DateTime day;
+  final DateTime today;
+  final DateTime selectedDate;
+  final VoidCallback onTap;
+
+  const _WeeklyHeaderCell({
+    required this.day,
+    required this.today,
+    required this.selectedDate,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isToday = DateUtils.isSameDay(day, today);
+    final isSelected = DateUtils.isSameDay(day, selectedDate);
+
+    // pick a “calendar-like” visual: clean cell + subtle selection
+    final bg = isSelected
+        ? Colors.blue.shade50
+        : Colors.transparent;
+
+    final borderColor = Colors.blueGrey.shade200;
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 56, // consistent cell height like month grid rows
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border(
+            left: BorderSide(color: borderColor),
+            bottom: BorderSide(color: borderColor),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              DateFormat('EEE').format(day).toUpperCase(),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: Colors.blueGrey[600],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: isToday ? Colors.blue[700] : Colors.blueGrey[900],
+              ),
+            ),
+            // small today indicator like many calendar grids
+            if (isToday)
+              Container(
+                margin: const EdgeInsets.only(top: 3),
+                width: 16,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: Colors.blue[600],
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 
 class _OverviewSection extends StatelessWidget {
   const _OverviewSection({
@@ -4907,6 +4901,7 @@ class _ProfileOptionTile extends StatelessWidget {
     required this.accentColor,
     required this.cardColor,
     required this.borderColor,
+    this.onTap,
   });
 
   final IconData icon;
