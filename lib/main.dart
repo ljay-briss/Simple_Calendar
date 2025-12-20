@@ -630,7 +630,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
             children: [
               _buildCircularIconButton(Icons.arrow_back_ios_new, () {
                 setState(() {
-                  _selectedDate = _selectedDate.subtract(const Duration(days: 1));
+                  final deltaDays =
+                      _currentScheduleView == _ScheduleView.weekly ? 7 : 1;
+                  _selectedDate =
+                      _selectedDate.subtract(Duration(days: deltaDays));
                 });
               }),
               const SizedBox(width: 12),
@@ -659,7 +662,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               _buildCircularIconButton(Icons.arrow_forward_ios_rounded, () {
                 setState(() {
-                  _selectedDate = _selectedDate.add(const Duration(days: 1));
+                  final deltaDays =
+                      _currentScheduleView == _ScheduleView.weekly ? 7 : 1;
+                  _selectedDate = _selectedDate.add(Duration(days: deltaDays));
                 });
               }),
               const SizedBox(width: 12),
