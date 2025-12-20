@@ -769,26 +769,33 @@ Widget _buildWeeklyOverview() {
   final weekStart = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
   final weekDays = List.generate(7, (i) => weekStart.add(Duration(days: i)));
 
-  // Provide a bounded height so this can be embedded inside the surrounding
-  // SingleChildScrollView/Column used by the daily page. Using a fixed header
-  // height + hourly grid height avoids unbounded Expanded errors.
-  const hourHeight = 72.0;
-  final startHour = 1;
-  final endHour = 23;
+  // Keep the visual proportions of the calendar grid consistent and avoid the
+  // blank gutter that appeared when the height calculation did not match the
+  // grid cell height.
+  const startHour = 1;
+  const endHour = 23;
+  const hourHeight = 50.0;
   final totalHours = endHour - startHour + 1;
   final gridHeight = totalHours * hourHeight;
-  const headerHeight = 72.0;
-  final totalHeight = headerHeight + gridHeight;
 
-  return SizedBox(
-    height: totalHeight,
-    child: Column(
-      children: [
-        _buildWeeklyHeaderRow(weekDays),
-        const SizedBox(height: 12),
-        SizedBox(height: gridHeight, child: _buildWeeklyTimeGrid(weekDays)),
-      ],
-    ),
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _buildWeeklyHeaderRow(weekDays),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: gridHeight,
+        child: _buildWeeklyTimeGrid(
+          weekDays,
+          startHour: startHour,
+          endHour: endHour,
+          hourHeight: hourHeight,
+        ),
+      ),
+      const SizedBox(height: 16),
+      _buildWeeklySummarySection(weekDays),
+    ],
   );
 }
 
@@ -828,10 +835,12 @@ Widget _buildWeeklyHeaderRow(List<DateTime> days) {
 
 
 
-Widget _buildWeeklyTimeGrid(List<DateTime> days) {
-  const startHour = 1;
-  const endHour = 23;
-  const hourHeight = 50.0;
+Widget _buildWeeklyTimeGrid(
+  List<DateTime> days, {
+  required int startHour,
+  required int endHour,
+  required double hourHeight,
+}) {
   const timeColWidth = 52.0;
 
   final totalHours = endHour - startHour + 1;
@@ -859,7 +868,43 @@ Widget _buildWeeklyTimeGrid(List<DateTime> days) {
   );
 }
 
+Widget _buildWeeklySummarySection(List<DateTime> weekDays) {
+  final weekStart = weekDays.first;
+  final weekEnd = weekDays.last;
 
+  final eventsByDay = weekDays
+      .map((day) => MapEntry(day, _getEventsForDate(day)))
+      .where((entry) => entry.value.isNotEmpty)
+      .toList();
+
+  return _OverviewSection(
+    title:
+        'Week of ${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekEnd)}',
+    child: eventsByDay.isEmpty
+        ? const _EmptyOverviewMessage(
+            message: 'No events scheduled this week yet.',
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (int i = 0; i < eventsByDay.length; i++) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    DateFormat('EEEE, MMM d').format(eventsByDay[i].key),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                ...eventsByDay[i].value.map(_buildEventTile),
+                if (i != eventsByDay.length - 1) const SizedBox(height: 8),
+              ],
+            ],
+          ),
+  );
+}
 
 
 List<Widget> _buildWeeklyNowLine(
