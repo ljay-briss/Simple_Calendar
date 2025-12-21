@@ -11,7 +11,7 @@ part 'note_editor_page.dart';
 part 'notes_folder_page.dart';
 
 // Core data definitions shared across the calendar, tasks, and notes views.
-enum EventType { event, task, note }
+enum EventType { event, task, note, timeOff }
 
 extension EventTypeExtension on EventType {
   String get label {
@@ -22,6 +22,8 @@ extension EventTypeExtension on EventType {
         return 'Task';
       case EventType.note:
         return 'Note';
+      case EventType.timeOff:
+        return 'Time Off';
     }
   }
 }
@@ -81,6 +83,23 @@ const List<String> kCategoryOptions = <String>[
   'Other',
 ];
 
+List<String> _normalizeCategories(Iterable<String> categories) {
+  final seen = <String>{};
+  final normalized = <String>[];
+  for (final category in categories) {
+    final trimmed = category.trim();
+    if (trimmed.isEmpty) continue;
+    final key = trimmed.toLowerCase();
+    if (seen.add(key)) {
+      normalized.add(trimmed);
+    }
+  }
+  if (normalized.isEmpty) {
+    normalized.add(kCategoryOptions.first);
+  }
+  return normalized;
+}
+
 String reminderLabelFromDuration(Duration? duration) {
   for (final entry in kReminderOptions.entries) {
     final option = entry.value;
@@ -128,6 +147,8 @@ class Event {
   final Duration? reminder;
   final RepeatFrequency repeatFrequency;
   final bool isCompleted;
+  final int? estimatedMinutes;
+  final List<String> subtasks;
 
   Event({
     required this.title,
@@ -140,6 +161,8 @@ class Event {
     this.reminder,
     this.repeatFrequency = RepeatFrequency.none,
     this.isCompleted = false,
+    this.estimatedMinutes,
+    this.subtasks = const [],
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
@@ -156,6 +179,8 @@ class Event {
       'reminderMinutes': reminder?.inMinutes,
       'repeatFrequency': repeatFrequency.name,
       'isCompleted': isCompleted,
+      'estimatedMinutes': estimatedMinutes,
+      'subtasks': subtasks,
     };
   }
 
@@ -176,6 +201,17 @@ class Event {
     final type = _eventTypeFromString(map['type']) ?? EventType.event;
     final repeat = _repeatFrequencyFromString(map['repeatFrequency']) ?? RepeatFrequency.none;
     final isCompleted = map['isCompleted'] is bool ? map['isCompleted'] as bool : _boolFromAny(map['isCompleted']);
+    final estimatedMinutesRaw = map['estimatedMinutes'];
+    final estimatedMinutes = estimatedMinutesRaw is num ? estimatedMinutesRaw.round() : null;
+    final subtasksRaw = map['subtasks'];
+    final subtasks = <String>[];
+    if (subtasksRaw is List) {
+      for (final entry in subtasksRaw) {
+        if (entry is String && entry.trim().isNotEmpty) {
+          subtasks.add(entry);
+        }
+      }
+    }
 
     return Event(
       title: (map['title'] as String?) ?? '',
@@ -188,6 +224,8 @@ class Event {
       reminder: reminder,
       repeatFrequency: repeat,
       isCompleted: isCompleted,
+      estimatedMinutes: estimatedMinutes,
+      subtasks: subtasks,
     );
   }
 
@@ -202,6 +240,8 @@ class Event {
     Duration? reminder,
     RepeatFrequency? repeatFrequency,
     bool? isCompleted,
+    int? estimatedMinutes,
+    List<String>? subtasks,
   }) {
     return Event(
       title: title ?? this.title,
@@ -214,6 +254,8 @@ class Event {
       reminder: reminder ?? this.reminder,
       repeatFrequency: repeatFrequency ?? this.repeatFrequency,
       isCompleted: isCompleted ?? this.isCompleted,
+      estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
+      subtasks: subtasks ?? this.subtasks,
     );
   }
 
@@ -403,6 +445,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
   final List<Event> _events = [];
   final List<NoteEntry> _notes = [];
+  List<String> _categories = List<String>.from(kCategoryOptions);
   bool _showIntroCard = true;
   HomeTab _currentTab = HomeTab.calendar;
   _ScheduleView _currentScheduleView = _ScheduleView.daily;
@@ -413,6 +456,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const String _eventsStorageKey = 'calendar_events';
   static const String _introCardStorageKey = 'calendar_intro_card';
   static const String _notesStorageKey = 'calendar_notes';
+  static const String _categoriesStorageKey = 'calendar_categories';
 
   // Hours that bound the daily/weekly time grid views.
   static const int _dayStartHour = 8;
@@ -462,6 +506,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
     }
 
+    final storedCategories = prefs.getStringList(_categoriesStorageKey);
     final showIntroPref = prefs.getBool(_introCardStorageKey);
 
     if (!mounted) return;
@@ -472,6 +517,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _notes
         ..clear()
         ..addAll(loadedNotes);
+      _categories = (storedCategories != null && storedCategories.isNotEmpty)
+          ? storedCategories.where((c) => c.trim().isNotEmpty).toSet().toList()
+          : List<String>.from(kCategoryOptions);
       _showIntroCard = showIntroPref ?? _events.isEmpty;
     });
     unawaited(_persistEvents());
@@ -485,6 +533,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         .map((event) => jsonEncode(event.toMap()))
         .toList();
     await prefs.setStringList(_eventsStorageKey, encoded);
+  }
+
+  Future<void> _persistCategories() async {
+    final prefs = await _getPrefs();
+    await prefs.setStringList(_categoriesStorageKey, _categories);
   }
 
   void _upsertNote(NoteEntry note) {
@@ -539,6 +592,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events.add(event);
     });
     unawaited(_persistEvents());
+  }
+
+  void _handleCategoriesUpdated(List<String> updated) {
+    setState(() => _categories = updated);
+    unawaited(_persistCategories());
   }
 
   void _handleNoteAdded(NoteEntry note) {
@@ -1456,6 +1514,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     const startHour = 5;
     const endHour = 23;
     const hourHeight = 72.0;
+    const lineOffset = 10.0;
     const minEventHeight = 68.0;
     final totalHours = endHour - startHour + 1;
     final timelineHeight = totalHours * hourHeight;
@@ -1465,7 +1524,8 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
     final showNowLine =
         isToday && nowMinutes >= 0 && nowMinutes <= totalMinutes && totalMinutes > 0;
-    final nowTop = ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight;
+    final nowTop =
+        ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight + lineOffset;
 
     return Container(
       decoration: BoxDecoration(
@@ -1505,7 +1565,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                           child: Column(
                             children: [
                               Padding(
-                                padding: const EdgeInsets.only(top: 10),
+                                padding: const EdgeInsets.only(top: lineOffset),
                                 child: Container(
                                   height: 1,
                                   color: const Color(0xFFE4EAF3),
@@ -1594,7 +1654,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                   math.min(endMinutes, (endHour - startHour + 1) * 60),
                 );
 
-                final top = (clampedStart / 60) * hourHeight;
+                final top = (clampedStart / 60) * hourHeight + lineOffset;
                 final height = ((clampedEnd - clampedStart) / 60) * hourHeight;
                 final visualHeight = height < minEventHeight ? minEventHeight : height;
 
@@ -1604,95 +1664,102 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                   right: 16,
                   child: SizedBox(
                     height: visualHeight,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isCompact = constraints.maxHeight <= minEventHeight + 0.1;
-                        final verticalPadding = isCompact ? 6.0 : 8.0;
-                        final betweenTitleAndCategory = isCompact ? 4.0 : 6.0;
-                        final betweenCategoryAndTime = isCompact ? 2.0 : 4.0;
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _showEditEventDialog(event),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isCompact = constraints.maxHeight <= minEventHeight + 0.1;
+                            final verticalPadding = isCompact ? 6.0 : 8.0;
+                            final betweenTitleAndCategory = isCompact ? 4.0 : 6.0;
+                            final betweenCategoryAndTime = isCompact ? 2.0 : 4.0;
 
-                        return DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF3FF),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFD7E2F8)),
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: verticalPadding,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.max,
-                              children: [
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(maxHeight: 28),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 5,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          child: Text(
-                                            event.title,
-                                            style: TextStyle(
-                                              color: Colors.blue[800],
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 11,
+                            return DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF3FF),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFD7E2F8)),
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: verticalPadding,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.max,
+                                  children: [
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(maxHeight: 28),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Flexible(
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 5,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                event.title,
+                                                style: TextStyle(
+                                                  color: Colors.blue[800],
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 11,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
-                                            overflow: TextOverflow.ellipsis,
                                           ),
+                                          const SizedBox(width: 8),
+                                          Icon(
+                                            _iconForEventType(event.type),
+                                            size: 16,
+                                            color: Colors.blue[700],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    SizedBox(height: betweenTitleAndCategory),
+                                    Flexible(
+                                      fit: FlexFit.tight,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          event.category,
+                                          style: TextStyle(
+                                            color: Colors.blueGrey[900],
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                          maxLines: isCompact ? 1 : 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          softWrap: true,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      Icon(
-                                        _iconForEventType(event.type),
-                                        size: 16,
-                                        color: Colors.blue[700],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(height: betweenTitleAndCategory),
-                                Flexible(
-                                  fit: FlexFit.tight,
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      event.category,
-                                      style: TextStyle(
-                                        color: Colors.blueGrey[900],
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                      maxLines: isCompact ? 1 : 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      softWrap: true,
                                     ),
-                                  ),
+                                    SizedBox(height: betweenCategoryAndTime),
+                                    Text(
+                                      _formatEventTimeRange(start, end),
+                                      style: TextStyle(
+                                        color: Colors.blueGrey[500],
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                SizedBox(height: betweenCategoryAndTime),
-                                Text(
-                                  _formatEventTimeRange(start, end),
-                                  style: TextStyle(
-                                    color: Colors.blueGrey[500],
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
                 );
@@ -1719,6 +1786,8 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     switch (type) {
       case EventType.task:
         return Icons.checklist_rounded;
+      case EventType.timeOff:
+        return Icons.beach_access_outlined;
       case EventType.note:
         return Icons.sticky_note_2_outlined;
       default:
@@ -1866,7 +1935,11 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
   Future<void> _showEditEventDialog(Event oldEvent) async {
     final edited = await showDialog<Event>(
       context: context,
-      builder: (_) => EditEventDialog(initial: oldEvent),
+      builder: (_) => EditEventDialog(
+        initial: oldEvent,
+        categories: _categories,
+        onCategoriesChanged: _handleCategoriesUpdated,
+      ),
     );
     if (edited != null) {
       setState(() {
@@ -2337,6 +2410,7 @@ Widget _buildEventTile(Event event) {
       : 'All day';
 
   final isTask = event.type == EventType.task;
+  final isTimeOff = event.type == EventType.timeOff;
   final isNote = event.type == EventType.note;
   final isCompleted = isTask && event.isCompleted;
 
@@ -2345,6 +2419,9 @@ Widget _buildEventTile(Event event) {
   if (isTask) {
     typeIcon = Icons.check_circle_outline;
     typeColor = const Color(0xFFF1E8FF);
+  } else if (isTimeOff) {
+    typeIcon = Icons.beach_access_outlined;
+    typeColor = const Color(0xFFEAF7F1);
   } else if (isNote) {
     typeIcon = Icons.sticky_note_2_outlined;
     typeColor = const Color(0xFFFFF4D9);
@@ -2882,6 +2959,8 @@ Widget _buildEventTile(Event event) {
       context: context,
       builder: (context) => AddEventDialog(
         selectedDate: _selectedDate,
+        categories: _categories,
+        onCategoriesChanged: _handleCategoriesUpdated,
         onEventAdded: (event) {
           _handleEventAdded(event);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -3159,7 +3238,7 @@ class _TimeSlot {
 }
 
 String _eventTypeLabel(EventType type) {
-  return type == EventType.note ? 'Time Off' : type.label;
+  return type.label;
 }
 
 Widget _sectionLabel(String text) {
@@ -3477,11 +3556,15 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
 class AddEventDialog extends StatefulWidget {
   const AddEventDialog({
     required this.selectedDate,
+    required this.categories,
+    required this.onCategoriesChanged,
     required this.onEventAdded,
     super.key,
   });
   
   final DateTime selectedDate;
+  final List<String> categories;
+  final ValueChanged<List<String>> onCategoriesChanged;
   final ValueChanged<Event> onEventAdded;
 
   @override
@@ -3491,13 +3574,18 @@ class AddEventDialog extends StatefulWidget {
 class _AddEventDialogState extends State<AddEventDialog> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _taskHoursController = TextEditingController();
+  final _taskMinutesController = TextEditingController();
+  final _subtaskController = TextEditingController();
+  final List<String> _subtasks = [];
   EventType _selectedType = EventType.event;
-  String _selectedCategory = kCategoryOptions.first;
+  String _selectedCategory = '';
   String _selectedReminderLabel = kReminderOptions.keys.first;
   RepeatFrequency _repeatFrequency = RepeatFrequency.none;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   bool _isAllDay = true;
+  late List<String> _categories;
   late DateTime _selectedDate;
 
   @override
@@ -3505,6 +3593,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
     super.initState();
     final base = widget.selectedDate;
     _selectedDate = DateTime(base.year, base.month, base.day);
+    _categories = _normalizeCategories(widget.categories);
+    _selectedCategory = _categories.first;
   }
 
   Duration? get _calculatedDuration {
@@ -3517,6 +3607,24 @@ class _AddEventDialogState extends State<AddEventDialog> {
       return null;
     }
     return Duration(minutes: endMinutes - startMinutes);
+  }
+
+  Future<void> _showCategoryManager() async {
+    final updated = await showDialog<List<String>>(
+      context: context,
+      useRootNavigator: true,
+      builder: (_) => _CategoryManagerDialog(categories: _categories),
+    );
+    if (!mounted) return;
+    if (updated == null) return;
+    final normalized = _normalizeCategories(updated);
+    setState(() {
+      _categories = normalized;
+      if (!_categories.contains(_selectedCategory)) {
+        _selectedCategory = _categories.first;
+      }
+    });
+    widget.onCategoriesChanged(_categories);
   }
 
   @override
@@ -3645,6 +3753,10 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           const SizedBox(height: 12),
                           _buildAllDayToggle(),
                           const SizedBox(height: 20),
+                          if (_selectedType == EventType.task) ...[
+                            _buildTaskDetailsSection(),
+                            const SizedBox(height: 20),
+                          ],
                           _sectionLabel('Details'),
                           const SizedBox(height: 6),
                           TextField(
@@ -3695,6 +3807,115 @@ class _AddEventDialogState extends State<AddEventDialog> {
   }
 
 
+  int? _parseEstimatedMinutes() {
+    final hours = int.tryParse(_taskHoursController.text.trim());
+    final minutes = int.tryParse(_taskMinutesController.text.trim());
+    final total = (hours ?? 0) * 60 + (minutes ?? 0);
+    return total > 0 ? total : null;
+  }
+
+  void _addSubtask() {
+    final value = _subtaskController.text.trim();
+    if (value.isEmpty) return;
+    setState(() {
+      _subtasks.add(value);
+      _subtaskController.clear();
+    });
+  }
+
+  void _removeSubtask(String value) {
+    setState(() {
+      _subtasks.remove(value);
+    });
+  }
+
+  Widget _buildTaskDetailsSection() {
+    final estimatedMinutes = _parseEstimatedMinutes();
+    final estimatedLabel = estimatedMinutes != null
+        ? _formatDuration(Duration(minutes: estimatedMinutes))
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('Task details'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _taskHoursController,
+                keyboardType: TextInputType.number,
+                decoration: _sharedInputDecoration(
+                  label: 'Hours',
+                  icon: Icons.timelapse_outlined,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _taskMinutesController,
+                keyboardType: TextInputType.number,
+                decoration: _sharedInputDecoration(
+                  label: 'Minutes',
+                  icon: Icons.timer_outlined,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (estimatedLabel != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Estimated duration: $estimatedLabel',
+            style: TextStyle(
+              color: Colors.blueGrey.shade600,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        _sectionLabel('Subtasks'),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _subtaskController,
+                decoration: _sharedInputDecoration(
+                  label: 'Add subtask',
+                  icon: Icons.playlist_add_check_outlined,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Add subtask',
+              onPressed: _addSubtask,
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+          ],
+        ),
+        if (_subtasks.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _subtasks
+                .map(
+                  (subtask) => InputChip(
+                    label: Text(subtask),
+                    onDeleted: () => _removeSubtask(subtask),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildReminderAndCategoryFields() {
     final reminderField = DropdownButtonFormField<String>(
       initialValue: _selectedReminderLabel,
@@ -3723,7 +3944,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
         label: 'Add to',
         icon: Icons.folder_outlined,
       ),
-      items: kCategoryOptions
+      items: _categories
           .map(
             (category) => DropdownMenuItem<String>(
               value: category,
@@ -3735,6 +3956,14 @@ class _AddEventDialogState extends State<AddEventDialog> {
         if (value == null) return;
         setState(() => _selectedCategory = value);
       },
+    );
+    final manageButton = Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: _showCategoryManager,
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: const Text('Manage categories'),
+      ),
     );
 
     return LayoutBuilder(
@@ -3748,14 +3977,22 @@ class _AddEventDialogState extends State<AddEventDialog> {
               reminderField,
               const SizedBox(height: spacing),
               categoryField,
+              manageButton,
             ],
           );
         }
-        return Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: reminderField),
-            const SizedBox(width: spacing),
-            Expanded(child: categoryField),
+            Row(
+              children: [
+                Expanded(child: reminderField),
+                const SizedBox(width: spacing),
+                Expanded(child: categoryField),
+              ],
+            ),
+            const SizedBox(height: 8),
+            manageButton,
           ],
         );
       },
@@ -3960,7 +4197,11 @@ class _AddEventDialogState extends State<AddEventDialog> {
     }
 
     final reminderDuration = kReminderOptions[_selectedReminderLabel];
-
+    final estimatedMinutes =
+        _selectedType == EventType.task ? _parseEstimatedMinutes() : null;
+    final subtasks = _selectedType == EventType.task
+        ? List<String>.from(_subtasks)
+        : <String>[];
 
     final event = Event(
       title: title,
@@ -3973,6 +4214,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
       reminder: reminderDuration,
       repeatFrequency: _repeatFrequency,
       isCompleted: false,
+      estimatedMinutes: estimatedMinutes,
+      subtasks: subtasks,
     );
 
     widget.onEventAdded(event);
@@ -3994,13 +4237,23 @@ class _AddEventDialogState extends State<AddEventDialog> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _taskHoursController.dispose();
+    _taskMinutesController.dispose();
+    _subtaskController.dispose();
     super.dispose();
   }
 }
 
 class EditEventDialog extends StatefulWidget {
-  const EditEventDialog({required this.initial, super.key});
+  const EditEventDialog({
+    required this.initial,
+    required this.categories,
+    required this.onCategoriesChanged,
+    super.key,
+  });
   final Event initial;
+  final List<String> categories;
+  final ValueChanged<List<String>> onCategoriesChanged;
 
   @override
   State<EditEventDialog> createState() => _EditEventDialogState();
@@ -4009,12 +4262,17 @@ class EditEventDialog extends StatefulWidget {
 class _EditEventDialogState extends State<EditEventDialog> {
   late TextEditingController _title;
   late TextEditingController _desc;
+  late TextEditingController _taskHoursController;
+  late TextEditingController _taskMinutesController;
+  late TextEditingController _subtaskController;
+  late List<String> _subtasks;
   late EventType _type;
   late String _category;
   late String _reminderLabel;
   late RepeatFrequency _repeatFrequency;
   TimeOfDay? _start;
   TimeOfDay? _end;
+  late List<String> _categories;
   late DateTime _selectedDate;
 
 
@@ -4026,11 +4284,25 @@ class _EditEventDialogState extends State<EditEventDialog> {
     _desc = TextEditingController(text: init.description);
     _type = init.type == EventType.note ? EventType.event : init.type;
     _category = init.category;
+    _categories = _normalizeCategories(widget.categories);
+    if (!_categories.contains(_category)) {
+      _categories.insert(0, _category);
+    }
     _reminderLabel = reminderLabelFromDuration(init.reminder);
     _repeatFrequency = init.repeatFrequency;
     _start = init.startTime;
     _end = init.endTime;
-      _selectedDate = DateTime(init.date.year, init.date.month, init.date.day);
+    _selectedDate = DateTime(init.date.year, init.date.month, init.date.day);
+
+    final estimatedMinutes = init.estimatedMinutes ?? 0;
+    final hours = estimatedMinutes ~/ 60;
+    final minutes = estimatedMinutes % 60;
+    _taskHoursController =
+        TextEditingController(text: hours > 0 ? hours.toString() : '');
+    _taskMinutesController =
+        TextEditingController(text: minutes > 0 ? minutes.toString() : '');
+    _subtaskController = TextEditingController();
+    _subtasks = List<String>.from(init.subtasks);
   }
 
   Duration? get _calculatedDuration {
@@ -4043,6 +4315,24 @@ class _EditEventDialogState extends State<EditEventDialog> {
       return null;
     }
     return Duration(minutes: endMinutes - startMinutes);
+  }
+
+  Future<void> _showCategoryManager() async {
+    final updated = await showDialog<List<String>>(
+      context: context,
+      useRootNavigator: true,
+      builder: (_) => _CategoryManagerDialog(categories: _categories),
+    );
+    if (!mounted) return;
+    if (updated == null) return;
+    final normalized = _normalizeCategories(updated);
+    setState(() {
+      _categories = normalized;
+      if (!_categories.contains(_category)) {
+        _category = _categories.first;
+      }
+    });
+    widget.onCategoriesChanged(_categories);
   }
 
   @override
@@ -4166,6 +4456,10 @@ class _EditEventDialogState extends State<EditEventDialog> {
                               ),
                             ),
                           ],
+                          if (_type == EventType.task) ...[
+                            const SizedBox(height: 20),
+                            _buildTaskDetailsSection(),
+                          ],
                           const SizedBox(height: 20),
                           _sectionLabel('Details'),
                           const SizedBox(height: 6),
@@ -4227,6 +4521,115 @@ class _EditEventDialogState extends State<EditEventDialog> {
   }
 
 
+  int? _parseEstimatedMinutes() {
+    final hours = int.tryParse(_taskHoursController.text.trim());
+    final minutes = int.tryParse(_taskMinutesController.text.trim());
+    final total = (hours ?? 0) * 60 + (minutes ?? 0);
+    return total > 0 ? total : null;
+  }
+
+  void _addSubtask() {
+    final value = _subtaskController.text.trim();
+    if (value.isEmpty) return;
+    setState(() {
+      _subtasks.add(value);
+      _subtaskController.clear();
+    });
+  }
+
+  void _removeSubtask(String value) {
+    setState(() {
+      _subtasks.remove(value);
+    });
+  }
+
+  Widget _buildTaskDetailsSection() {
+    final estimatedMinutes = _parseEstimatedMinutes();
+    final estimatedLabel = estimatedMinutes != null
+        ? _formatDuration(Duration(minutes: estimatedMinutes))
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('Task details'),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _taskHoursController,
+                keyboardType: TextInputType.number,
+                decoration: _sharedInputDecoration(
+                  label: 'Hours',
+                  icon: Icons.timelapse_outlined,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _taskMinutesController,
+                keyboardType: TextInputType.number,
+                decoration: _sharedInputDecoration(
+                  label: 'Minutes',
+                  icon: Icons.timer_outlined,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (estimatedLabel != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Estimated duration: $estimatedLabel',
+            style: TextStyle(
+              color: Colors.blueGrey.shade600,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        _sectionLabel('Subtasks'),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _subtaskController,
+                decoration: _sharedInputDecoration(
+                  label: 'Add subtask',
+                  icon: Icons.playlist_add_check_outlined,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Add subtask',
+              onPressed: _addSubtask,
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+          ],
+        ),
+        if (_subtasks.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _subtasks
+                .map(
+                  (subtask) => InputChip(
+                    label: Text(subtask),
+                    onDeleted: () => _removeSubtask(subtask),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildReminderAndCategoryFields() {
     final reminderField = DropdownButtonFormField<String>(
       initialValue: _reminderLabel,
@@ -4256,7 +4659,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
         label: 'Add to',
         icon: Icons.folder_outlined,
       ),
-      items: kCategoryOptions
+      items: _categories
           .map(
             (category) => DropdownMenuItem<String>(
               value: category,
@@ -4268,6 +4671,14 @@ class _EditEventDialogState extends State<EditEventDialog> {
         if (value == null) return;
         setState(() => _category = value);
       },
+    );
+    final manageButton = Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: _showCategoryManager,
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: const Text('Manage categories'),
+      ),
     );
 
     return LayoutBuilder(
@@ -4281,14 +4692,22 @@ class _EditEventDialogState extends State<EditEventDialog> {
               reminderField,
               const SizedBox(height: spacing),
               categoryField,
+              manageButton,
             ],
           );
         }
-        return Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: reminderField),
-            const SizedBox(width: spacing),
-            Expanded(child: categoryField),
+            Row(
+              children: [
+                Expanded(child: reminderField),
+                const SizedBox(width: spacing),
+                Expanded(child: categoryField),
+              ],
+            ),
+            const SizedBox(height: 8),
+            manageButton,
           ],
         );
       },
@@ -4447,6 +4866,10 @@ class _EditEventDialogState extends State<EditEventDialog> {
     }
 
     final reminderDuration = kReminderOptions[_reminderLabel];
+    final estimatedMinutes = _type == EventType.task ? _parseEstimatedMinutes() : null;
+    final subtasks = _type == EventType.task
+        ? List<String>.from(_subtasks)
+        : <String>[];
 
     final updated = Event(
       title: title,
@@ -4459,6 +4882,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
       reminder: reminderDuration,
       repeatFrequency: _repeatFrequency,
       isCompleted: widget.initial.isCompleted,
+      estimatedMinutes: estimatedMinutes,
+      subtasks: subtasks,
     );
 
     Navigator.of(context).pop(updated);
@@ -4479,6 +4904,202 @@ class _EditEventDialogState extends State<EditEventDialog> {
   void dispose() {
     _title.dispose();
     _desc.dispose();
+    _taskHoursController.dispose();
+    _taskMinutesController.dispose();
+    _subtaskController.dispose();
+    super.dispose();
+  }
+}
+
+class _CategoryManagerDialog extends StatefulWidget {
+  const _CategoryManagerDialog({required this.categories});
+
+  final List<String> categories;
+
+  @override
+  State<_CategoryManagerDialog> createState() => _CategoryManagerDialogState();
+}
+
+class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
+  late List<String> _categories;
+  final _newCategoryController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _categories = List<String>.from(widget.categories);
+  }
+
+  bool _isDuplicate(String value, {String? excluding}) {
+    final lower = value.toLowerCase();
+    for (final category in _categories) {
+      if (excluding != null && category == excluding) continue;
+      if (category.toLowerCase() == lower) return true;
+    }
+    return false;
+  }
+
+  void _addCategory() {
+    final value = _newCategoryController.text.trim();
+    if (value.isEmpty) return;
+    if (_isDuplicate(value)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category already exists.')),
+      );
+      return;
+    }
+    setState(() {
+      _categories.add(value);
+      _newCategoryController.clear();
+    });
+  }
+
+  Future<void> _editCategory(String category) async {
+    final controller = TextEditingController(text: category);
+    final updated = await showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit category'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Category'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final value = updated?.trim() ?? '';
+    if (value.isEmpty || value == category) return;
+    if (_isDuplicate(value, excluding: category)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category already exists.')),
+      );
+      return;
+    }
+    setState(() {
+      final index = _categories.indexOf(category);
+      if (index != -1) {
+        _categories[index] = value;
+      }
+    });
+  }
+
+  Future<void> _deleteCategory(String category) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      useRootNavigator: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete category?'),
+        content: Text('Delete "$category"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _categories.remove(category));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Manage categories'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 320, maxHeight: 320),
+        child: Column(
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newCategoryController,
+                    decoration: const InputDecoration(
+                      labelText: 'New category',
+                    ),
+                    onSubmitted: (_) => _addCategory(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Add category',
+                  onPressed: _addCategory,
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _categories.isEmpty
+                  ? const Center(child: Text('No categories yet.'))
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _categories.length,
+                      separatorBuilder: (_, __) => const Divider(height: 16),
+                      itemBuilder: (context, index) {
+                        final category = _categories[index];
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                category,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Edit',
+                              onPressed: () => _editCategory(category),
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                            IconButton(
+                              tooltip: 'Delete',
+                              onPressed: () => _deleteCategory(category),
+                              icon: const Icon(Icons.delete_outline),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_categories),
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _newCategoryController.dispose();
     super.dispose();
   }
 }
@@ -4508,7 +5129,7 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
   List<Event> get _sortedEvents {
     final copy = List<Event>.from(_events);
     copy.sort((a, b) {
-      final dateCompare = a.date.compareTo(b.date);
+      final dateCompare = b.date.compareTo(a.date);
       if (dateCompare != 0) {
         return dateCompare;
       }
@@ -4518,7 +5139,7 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
       final bStart = b.startTime != null
           ? b.startTime!.hour * 60 + b.startTime!.minute
           : -1;
-      return aStart.compareTo(bStart);
+      return bStart.compareTo(aStart);
     });
     return copy;
   }
