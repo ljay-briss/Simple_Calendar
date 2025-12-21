@@ -3313,7 +3313,6 @@ class AddNoteDialog extends StatefulWidget {
 class _AddNoteDialogState extends State<AddNoteDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
-  String _selectedCategory = kCategoryOptions.first;
 
 
   @override
@@ -3389,27 +3388,6 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
                           autofocus: true,
                         ),
                         const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          initialValue: _selectedCategory,
-                          decoration: const InputDecoration(
-                            labelText: 'Category',
-                            prefixIcon: Icon(Icons.folder_outlined),
-                            filled: true,
-                          ),
-                          items: kCategoryOptions
-                              .map(
-                                (category) => DropdownMenuItem<String>(
-                                  value: category,
-                                  child: Text(category),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() => _selectedCategory = value);
-                          },
-                        ),
-                        const SizedBox(height: 16),
 
                         TextField(
                           controller: _descriptionController,
@@ -3477,7 +3455,7 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
       id: now.microsecondsSinceEpoch.toString(),
       title: title,
       description: _descriptionController.text.trim(),
-      category: _selectedCategory,
+      category: title,
       date: null,
       createdAt: now,
       updatedAt: now,
