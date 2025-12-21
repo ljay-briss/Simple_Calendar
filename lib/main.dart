@@ -3612,7 +3612,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
   Future<void> _showCategoryManager() async {
     final updated = await showDialog<List<String>>(
       context: context,
-      useRootNavigator: true,
+      useRootNavigator: false,
       builder: (_) => _CategoryManagerDialog(categories: _categories),
     );
     if (!mounted) return;
@@ -4320,7 +4320,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
   Future<void> _showCategoryManager() async {
     final updated = await showDialog<List<String>>(
       context: context,
-      useRootNavigator: true,
+      useRootNavigator: false,
       builder: (_) => _CategoryManagerDialog(categories: _categories),
     );
     if (!mounted) return;
@@ -5022,10 +5022,10 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Manage categories'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 320, maxHeight: 320),
+      content: SizedBox(
+        width: 320,
+        height: 360,
         child: Column(
-          mainAxisSize: MainAxisSize.max,
           children: [
             Row(
               children: [
