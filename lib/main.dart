@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:contacts_service/contacts_service.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_localizations.dart';
 
 part 'note_editor_page.dart';
 part 'notes_folder_page.dart';
@@ -83,6 +86,52 @@ const List<String> kCategoryOptions = <String>[
   'Other',
 ];
 
+String _localeToString(Locale locale) {
+  return locale.countryCode == null || locale.countryCode!.isEmpty
+      ? locale.languageCode
+      : '${locale.languageCode}_${locale.countryCode}';
+}
+
+Locale? _localeFromString(String raw) {
+  if (raw.isEmpty) return null;
+  final parts = raw.split('_');
+  if (parts.length == 1) return Locale(parts[0]);
+  return Locale(parts[0], parts[1]);
+}
+
+String _languageLabelForLocale(Locale? locale) {
+  if (locale == null) return 'English';
+  switch (locale.toLanguageTag()) {
+    case 'en':
+      return 'English';
+    case 'fr':
+      return 'French';
+    case 'es':
+      return 'Spanish';
+    case 'ru':
+      return 'Russian';
+    case 'uk':
+      return 'Ukrainian';
+    case 'bg':
+      return 'Bulgarian';
+    case 'pl':
+      return 'Polish';
+    case 'pt':
+      return 'Portuguese';
+    case 'ja':
+      return 'Japanese';
+    case 'zh-TW':
+      return 'Taiwanese';
+    case 'zh-CN':
+      return 'Chinese (Mandarin)';
+    case 'ko':
+      return 'Korean';
+    case 'ar':
+      return 'Arabic';
+  }
+  return locale.toLanguageTag();
+}
+
 List<String> _normalizeCategories(Iterable<String> categories) {
   final seen = <String>{};
   final normalized = <String>[];
@@ -119,19 +168,66 @@ void main() {
   runApp(const CalendarApp());
 }
 
-class CalendarApp extends StatelessWidget {
+class CalendarApp extends StatefulWidget {
   const CalendarApp({super.key});
 
   @override
+  State<CalendarApp> createState() => _CalendarAppState();
+}
+
+class _CalendarAppState extends State<CalendarApp> {
+  static const String _localeStorageKey = 'app_locale';
+  final ValueNotifier<Locale?> _localeNotifier = ValueNotifier<Locale?>(null);
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadLocale());
+  }
+
+  Future<void> _loadLocale() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_localeStorageKey);
+    if (stored == null) return;
+    final parsed = _localeFromString(stored);
+    if (parsed == null) return;
+    _localeNotifier.value = parsed;
+    Intl.defaultLocale = parsed.toLanguageTag();
+  }
+
+  Future<void> _updateLocale(Locale locale) async {
+    _localeNotifier.value = locale;
+    Intl.defaultLocale = locale.toLanguageTag();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_localeStorageKey, _localeToString(locale));
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Calendar Planner',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const CalendarScreen(),
-      debugShowCheckedModeBanner: false,
+    return ValueListenableBuilder<Locale?>(
+      valueListenable: _localeNotifier,
+      builder: (context, locale, _) {
+        return MaterialApp(
+          title: 'Calendar Planner',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            useMaterial3: true,
+          ),
+          locale: locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: CalendarScreen(
+            currentLocale: locale,
+            onLocaleChanged: _updateLocale,
+          ),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }
@@ -433,7 +529,14 @@ class NoteEntry {
 
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({
+    super.key,
+    required this.currentLocale,
+    required this.onLocaleChanged,
+  });
+
+  final Locale? currentLocale;
+  final ValueChanged<Locale> onLocaleChanged;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -750,6 +853,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildScheduleToggle() {
+    final l10n = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -760,9 +864,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       child: Row(
         children: [
-          _buildToggleButton('Daily', _ScheduleView.daily, Icons.wb_sunny_rounded),
+          _buildToggleButton(l10n.daily, _ScheduleView.daily, Icons.wb_sunny_rounded),
           const SizedBox(width: 8),
-          _buildToggleButton('Weekly', _ScheduleView.weekly, Icons.view_week_rounded),
+          _buildToggleButton(l10n.weekly, _ScheduleView.weekly, Icons.view_week_rounded),
         ],
       ),
     );
@@ -869,6 +973,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildWeeklyTabToggle() {
+    final l10n = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -879,9 +984,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       child: Row(
         children: [
-          _buildWeeklyTabButton('Schedule', _WeeklyTab.schedule, Icons.view_week_rounded),
+          _buildWeeklyTabButton(l10n.schedule, _WeeklyTab.schedule, Icons.view_week_rounded),
           const SizedBox(width: 8),
-          _buildWeeklyTabButton('Free time', _WeeklyTab.freeTime, Icons.timer_outlined),
+          _buildWeeklyTabButton(l10n.freeTime, _WeeklyTab.freeTime, Icons.timer_outlined),
         ],
       ),
     );
@@ -1049,8 +1154,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     final hasAnyFreeTime = freeSlotsByDay.any((entry) => entry.value.isNotEmpty);
 
+    final l10n = AppLocalizations.of(context);
     return _OverviewSection(
-      title: 'Free time this week',
+      title: l10n.freeTimeThisWeek,
       child: hasAnyFreeTime
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1912,12 +2018,13 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
   }
 
   Widget _buildNotesTopBar() {
+    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           Text(
-            'Notes',
+            l10n.notes,
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
@@ -2010,7 +2117,12 @@ Widget _buildCompactCalendarHeader() {
           const SizedBox(width: 8),
           _buildIconButton(Icons.person_outline, () {
             Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
+              MaterialPageRoute(
+                builder: (_) => ProfilePage(
+                  currentLocale: widget.currentLocale,
+                  onLocaleChanged: widget.onLocaleChanged,
+                ),
+              ),
             );
           }),
         ],
@@ -2348,13 +2460,14 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
   }
 
   Widget _buildFreeTimeOverview(List<_TimeSlot> freeSlots, List<Event> events) {
+    final l10n = AppLocalizations.of(context);
     final eventsAffectingTime =
         events.where((event) => event.type != EventType.note).toList();
     final hasAllDayEvent =
         eventsAffectingTime.any((event) => !event.hasTimeRange);
 
     return _OverviewSection(
-      title: 'Free time',
+      title: l10n.freeTime,
       child: eventsAffectingTime.isEmpty
           // No events that block time → say "Free all day"
           ? Row(
@@ -2616,6 +2729,7 @@ Widget _buildEventTile(Event event) {
 
 
   Widget _buildBottomNavigationBar() {
+    final l10n = AppLocalizations.of(context);
     final textScaleFactor = MediaQuery.textScaleFactorOf(context);
     final estimatedMinHeight = 24 + 4 + (12 * textScaleFactor) + 16;
     final minHeight = math.max(52.0, estimatedMinHeight);
@@ -2647,11 +2761,11 @@ Widget _buildEventTile(Event event) {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _buildBottomNavItem(
-                          Icons.calendar_today, 'Calendar', HomeTab.calendar),
+                          Icons.calendar_today, l10n.calendar, HomeTab.calendar),
                       _buildBottomNavItem(
-                          Icons.note_outlined, 'Notes', HomeTab.notes),
+                          Icons.note_outlined, l10n.notes, HomeTab.notes),
                       _buildBottomNavItem(
-                          Icons.view_day_outlined, 'Daily', HomeTab.daily),
+                          Icons.view_day_outlined, l10n.daily, HomeTab.daily),
                     ],
                   ),
                 ),
@@ -5462,20 +5576,1600 @@ _DateQuery? _parseDateQueryLoose(String input) {
   return null; // not a date-like query
 }
 
-class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key});
+class FriendsPage extends StatefulWidget {
+  const FriendsPage({super.key});
+
+  @override
+  State<FriendsPage> createState() => _FriendsPageState();
+}
+
+enum _FriendsTab { search, myList, pending }
+
+class _PendingEntry {
+  const _PendingEntry({required this.contact, required this.isIncoming});
+
+  final Contact contact;
+  final bool isIncoming;
+}
+
+class _FriendsPageState extends State<FriendsPage> {
+  final TextEditingController _searchController = TextEditingController();
+  final List<Contact> _contacts = [];
+  final Set<String> _friendIds = <String>{};
+  final Set<String> _pendingIncomingIds = <String>{};
+  final Set<String> _pendingOutgoingIds = <String>{};
+
+  _FriendsTab _currentTab = _FriendsTab.myList;
+  bool _isLoadingContacts = false;
+  String? _contactsError;
+
+  static const String _friendsStorageKey = 'friends_friend_ids';
+  static const String _pendingIncomingStorageKey = 'friends_pending_incoming_ids';
+  static const String _pendingOutgoingStorageKey = 'friends_pending_outgoing_ids';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_handleSearchChange);
+    unawaited(_loadFriendState());
+    _loadContacts();
+  }
+
+  @override
+  void dispose() {
+    _searchController
+      ..removeListener(_handleSearchChange)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleSearchChange() {
+    if (_currentTab != _FriendsTab.search) return;
+    setState(() {});
+  }
+
+  Future<void> _loadFriendState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final friends = prefs.getStringList(_friendsStorageKey) ?? <String>[];
+    final incoming =
+        prefs.getStringList(_pendingIncomingStorageKey) ?? <String>[];
+    final outgoing =
+        prefs.getStringList(_pendingOutgoingStorageKey) ?? <String>[];
+    if (!mounted) return;
+    setState(() {
+      _friendIds
+        ..clear()
+        ..addAll(friends);
+      _pendingIncomingIds
+        ..clear()
+        ..addAll(incoming);
+      _pendingOutgoingIds
+        ..clear()
+        ..addAll(outgoing);
+    });
+  }
+
+  Future<void> _persistFriendState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_friendsStorageKey, _friendIds.toList());
+    await prefs.setStringList(
+        _pendingIncomingStorageKey, _pendingIncomingIds.toList());
+    await prefs.setStringList(
+        _pendingOutgoingStorageKey, _pendingOutgoingIds.toList());
+  }
+
+  Future<void> _loadContacts() async {
+    setState(() {
+      _isLoadingContacts = true;
+      _contactsError = null;
+    });
+    final status = await Permission.contacts.request();
+    if (!status.isGranted) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingContacts = false;
+        _contactsError = 'Contacts permission denied.';
+      });
+      return;
+    }
+
+    try {
+      final fetched = await ContactsService.getContacts(withThumbnails: false);
+      final list = fetched
+          .where((contact) => _contactDisplayName(contact).isNotEmpty)
+          .toList();
+      list.sort((a, b) => _contactDisplayName(a)
+          .toLowerCase()
+          .compareTo(_contactDisplayName(b).toLowerCase()));
+      if (!mounted) return;
+      setState(() {
+        _contacts
+          ..clear()
+          ..addAll(list);
+        _isLoadingContacts = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _contactsError = 'Unable to load contacts.';
+        _isLoadingContacts = false;
+      });
+    }
+  }
+
+  void _selectTab(_FriendsTab tab) {
+    setState(() {
+      _currentTab = tab;
+    });
+  }
+
+  void _acceptRequest(Contact contact) {
+    final id = _contactId(contact);
+    setState(() {
+      _pendingIncomingIds.remove(id);
+      _pendingOutgoingIds.remove(id);
+      _friendIds.add(id);
+    });
+    unawaited(_persistFriendState());
+  }
+
+  void _rejectRequest(Contact contact) {
+    final id = _contactId(contact);
+    setState(() {
+      _pendingIncomingIds.remove(id);
+      _pendingOutgoingIds.remove(id);
+    });
+    unawaited(_persistFriendState());
+  }
+
+  void _sendRequest(Contact contact) {
+    final id = _contactId(contact);
+    if (_friendIds.contains(id) ||
+        _pendingIncomingIds.contains(id) ||
+        _pendingOutgoingIds.contains(id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).friendRequestAlreadyPending)),
+      );
+      return;
+    }
+    setState(() {
+      _pendingOutgoingIds.add(id);
+    });
+    unawaited(_persistFriendState());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocalizations.of(context).friendRequestSent)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final background = Colors.white;
+    final l10n = AppLocalizations.of(context);
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        centerTitle: true,
+        title: Text(
+          l10n.friends,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              tooltip: l10n.profile,
+              icon: const Icon(Icons.person),
+              onPressed: () {},
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _buildTabBar(l10n),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _buildTabList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar(AppLocalizations l10n) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFE5E5E5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        children: [
+          _buildTabButton(_FriendsTab.search, l10n.search),
+          _buildTabButton(_FriendsTab.myList, l10n.myList),
+          _buildTabButton(_FriendsTab.pending, l10n.pending),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(_FriendsTab tab, String label) {
+    final isSelected = _currentTab == tab;
+    return Expanded(
+      child: InkWell(
+        onTap: () => _selectTab(tab),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : const Color(0xFFE5E5E5),
+            borderRadius: BorderRadius.circular(8),
+            border: isSelected
+                ? Border.all(color: Colors.black26)
+                : Border.all(color: Colors.transparent),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.black87 : Colors.black54,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabList() {
+    final l10n = AppLocalizations.of(context);
+    if (_isLoadingContacts) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_contactsError != null) {
+      return _buildStatusMessage(
+        _contactsError!,
+        action: TextButton(
+          onPressed: _loadContacts,
+          child: Text(l10n.tryAgain),
+        ),
+      );
+    }
+
+    if (_contacts.isEmpty) {
+      return _buildStatusMessage(
+        l10n.noContactsFound,
+      );
+    }
+
+    switch (_currentTab) {
+      case _FriendsTab.search:
+        return _buildSearchTab();
+      case _FriendsTab.myList:
+        return _buildMyListTab();
+      case _FriendsTab.pending:
+        return _buildPendingTab();
+    }
+  }
+
+  Widget _buildSearchTab() {
+    final l10n = AppLocalizations.of(context);
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = _contacts.where((contact) {
+      if (query.isEmpty) return true;
+      final name = _contactDisplayName(contact).toLowerCase();
+      final subtitle = _contactSubtitle(contact).toLowerCase();
+      return name.contains(query) || subtitle.contains(query);
+    }).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: l10n.searchContacts,
+              prefixIcon: const Icon(Icons.search),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              filled: true,
+              fillColor: const Color(0xFFF2F2F2),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildContactList(
+            filtered,
+            emptyMessage: l10n.noMatchingContacts,
+            trailingBuilder: (contact) {
+              final id = _contactId(contact);
+              if (_friendIds.contains(id)) {
+                return _buildStatusPill(l10n.friends);
+              }
+              if (_pendingIncomingIds.contains(id)) {
+                return _buildStatusPill(l10n.incoming);
+              }
+              if (_pendingOutgoingIds.contains(id)) {
+                return _buildStatusPill(l10n.requested);
+              }
+              return _buildActionButton(
+                icon: Icons.add,
+                onTap: () => _sendRequest(contact),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMyListTab() {
+    final l10n = AppLocalizations.of(context);
+    final friends = _contacts
+        .where((contact) => _friendIds.contains(_contactId(contact)))
+        .toList();
+    return _buildContactList(
+      friends,
+      emptyMessage: l10n.noFriendsYet,
+    );
+  }
+
+  Widget _buildPendingTab() {
+    final l10n = AppLocalizations.of(context);
+    final pending = _pendingEntries();
+    if (pending.isEmpty) {
+      return _buildStatusMessage(l10n.noPendingRequests);
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+      itemBuilder: (context, index) {
+        final entry = pending[index];
+        final actions = entry.isIncoming
+            ? [
+                _buildActionButton(
+                  icon: Icons.close,
+                  onTap: () => _rejectRequest(entry.contact),
+                ),
+                _buildActionButton(
+                  icon: Icons.check,
+                  onTap: () => _acceptRequest(entry.contact),
+                ),
+              ]
+            : [
+                _buildActionButton(
+                  icon: Icons.close,
+                  onTap: () => _rejectRequest(entry.contact),
+                ),
+              ];
+        final status = entry.isIncoming ? l10n.incoming : l10n.requested;
+        return _buildContactRow(entry.contact, status: status, actions: actions);
+      },
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemCount: pending.length,
+    );
+  }
+
+  List<_PendingEntry> _pendingEntries() {
+    final entries = <_PendingEntry>[];
+    for (final contact in _contacts) {
+      final id = _contactId(contact);
+      if (_pendingIncomingIds.contains(id)) {
+        entries.add(_PendingEntry(contact: contact, isIncoming: true));
+      } else if (_pendingOutgoingIds.contains(id)) {
+        entries.add(_PendingEntry(contact: contact, isIncoming: false));
+      }
+    }
+    return entries;
+  }
+
+  Widget _buildContactList(
+    List<Contact> contacts, {
+    required String emptyMessage,
+    Widget Function(Contact contact)? trailingBuilder,
+  }) {
+    if (contacts.isEmpty) {
+      return _buildStatusMessage(emptyMessage);
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+      itemBuilder: (context, index) {
+        final contact = contacts[index];
+        return _buildContactRow(
+          contact,
+          actions: trailingBuilder == null
+              ? const []
+              : [trailingBuilder(contact)],
+        );
+      },
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemCount: contacts.length,
+    );
+  }
+
+  Widget _buildContactRow(
+    Contact contact, {
+    String? status,
+    List<Widget> actions = const [],
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 16,
+            backgroundColor: Color(0xFFE0E0E0),
+            child: Icon(Icons.person, color: Colors.black54, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _contactDisplayName(contact),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  status ?? _contactSubtitle(contact),
+                  style: TextStyle(
+                    color: Colors.blueGrey[400],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (actions.isNotEmpty)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: actions,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({required IconData icon, required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          height: 28,
+          width: 28,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.black26),
+            borderRadius: BorderRadius.circular(6),
+            color: Colors.white,
+          ),
+          child: Icon(icon, size: 16, color: Colors.black87),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE5E5E5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _buildStatusMessage(String message, {Widget? action}) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            style: TextStyle(color: Colors.blueGrey[400]),
+          ),
+          if (action != null) ...[
+            const SizedBox(height: 8),
+            action,
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _contactId(Contact contact) {
+    final phone = contact.phones?.isNotEmpty == true
+        ? contact.phones!.first.value ?? ''
+        : '';
+    return contact.identifier ??
+        '${contact.displayName ?? ''}-$phone';
+  }
+
+  String _contactDisplayName(Contact contact) {
+    final display = contact.displayName?.trim();
+    if (display != null && display.isNotEmpty) return display;
+    final given = contact.givenName?.trim() ?? '';
+    final family = contact.familyName?.trim() ?? '';
+    return '$given $family'.trim();
+  }
+
+  String _contactSubtitle(Contact contact) {
+    final phone = contact.phones?.isNotEmpty == true
+        ? contact.phones!.first.value ?? ''
+        : '';
+    if (phone.trim().isNotEmpty) return phone.trim();
+    final email = contact.emails?.isNotEmpty == true
+        ? contact.emails!.first.value ?? ''
+        : '';
+    if (email.trim().isNotEmpty) return email.trim();
+    return 'No contact info';
+  }
+}
+
+class AccountPage extends StatefulWidget {
+  const AccountPage({super.key});
+
+  @override
+  State<AccountPage> createState() => _AccountPageState();
+}
+
+class _AccountPageState extends State<AccountPage> {
+  static const String _accountUsernameKey = 'account_username';
+  static const String _accountFullNameKey = 'account_full_name';
+  static const String _accountEmailKey = 'account_email';
+  static const String _accountPasswordKey = 'account_password';
+  static const String _accountLevelKey = 'account_level';
+  static const String _accountPointsKey = 'account_points';
+  static const String _friendsStorageKey = 'friends_friend_ids';
+
+  String _username = 'Charlie';
+  String _fullName = 'Charlie Edmonton';
+  String _email = 'charlie_ed23@gmail.com';
+  String _password = '************';
+  int _level = 10;
+  int _points = 100;
+  int _friends = 0;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadAccountData());
+  }
+
+  Future<void> _loadAccountData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final friends = prefs.getStringList(_friendsStorageKey) ?? <String>[];
+    if (!mounted) return;
+    setState(() {
+      _username = prefs.getString(_accountUsernameKey) ?? _username;
+      _fullName = prefs.getString(_accountFullNameKey) ?? _fullName;
+      _email = prefs.getString(_accountEmailKey) ?? _email;
+      _password = prefs.getString(_accountPasswordKey) ?? _password;
+      _level = prefs.getInt(_accountLevelKey) ?? _level;
+      _points = prefs.getInt(_accountPointsKey) ?? _points;
+      _friends = friends.length;
+      _isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final background = const Color(0xFFF0F3F7);
+    final card = Colors.white;
+    final border = Colors.blueGrey.withOpacity(0.08);
+    final l10n = AppLocalizations.of(context);
+    final localeTag = Localizations.localeOf(context).toLanguageTag();
 
-    // These map to the rest of your app's look:
-    final background = scheme.surface; // or scheme.background
-    final card = scheme.surface;
-    final border = Colors.blueGrey.shade100;
-    final accent = scheme.primary; // your app blue
-    final subtle = accent.withOpacity(0.08);
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        centerTitle: true,
+        title: Text(
+          l10n.account,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildProfileCard(
+                    card: card,
+                    border: border,
+                    accent: scheme.primary,
+                    l10n: l10n,
+                    localeTag: localeTag,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSectionCard(
+                    title: l10n.account,
+                    card: card,
+                    border: border,
+                    children: [
+                      _buildMenuTile(
+                        icon: Icons.person,
+                        iconColor: const Color(0xFF3B82F6),
+                        title: l10n.personalInfo,
+                        subtitle: l10n.manageInfo,
+                        onTap: () => _showPlaceholder(l10n.personalInfo),
+                      ),
+                      _buildMenuTile(
+                        icon: Icons.notifications,
+                        iconColor: const Color(0xFFF59E0B),
+                        title: l10n.notificationSettings,
+                        subtitle: l10n.alertsReminders,
+                        onTap: () => _showPlaceholder(l10n.notificationSettings),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSectionCard(
+                    title: l10n.preferences,
+                    card: card,
+                    border: border,
+                    children: [
+                      _buildMenuTile(
+                        icon: Icons.dark_mode,
+                        iconColor: const Color(0xFF111827),
+                        title: l10n.darkMode,
+                        subtitle: l10n.off,
+                        onTap: () => _showPlaceholder(l10n.darkMode),
+                      ),
+                      _buildMenuTile(
+                        icon: Icons.language,
+                        iconColor: const Color(0xFF10B981),
+                        title: l10n.language,
+                        subtitle: _languageLabelForLocale(
+                            Localizations.localeOf(context)),
+                        onTap: () => _showPlaceholder(l10n.language),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSectionCard(
+                    title: l10n.security,
+                    card: card,
+                    border: border,
+                    children: [
+                      _buildMenuTile(
+                        icon: Icons.lock,
+                        iconColor: const Color(0xFF4B5563),
+                        title: l10n.changePassword,
+                        subtitle: l10n.updatePassword,
+                        onTap: () => _showPlaceholder(l10n.changePassword),
+                      ),
+                      _buildMenuTile(
+                        icon: Icons.shield,
+                        iconColor: const Color(0xFF1F2937),
+                        title: l10n.twoFactor,
+                        subtitle: l10n.extraSecurity,
+                        onTap: () => _showPlaceholder(l10n.twoFactor),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildActionButton(
+                    label: l10n.logOut,
+                    icon: Icons.power_settings_new,
+                    color: const Color(0xFFEF4444),
+                    onTap: () => _showPlaceholder(l10n.logOut),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildActionButton(
+                    label: l10n.deleteAccount,
+                    icon: Icons.delete_outline,
+                    color: const Color(0xFFEF4444),
+                    onTap: () => _showPlaceholder(l10n.deleteAccount),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildProfileCard({
+    required Color card,
+    required Color border,
+    required Color accent,
+    required AppLocalizations l10n,
+    required String localeTag,
+  }) {
+    final pointsFormatted =
+        NumberFormat.decimalPattern(localeTag).format(_points);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: accent.withOpacity(0.15),
+            child: Icon(Icons.person, color: accent, size: 30),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _fullName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _email,
+                  style: TextStyle(color: Colors.blueGrey[400], fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    _buildStatChip(l10n.level, _level.toString()),
+                    _buildStatChip(l10n.points, pointsFormatted),
+                    _buildStatChip(l10n.friends, _friends.toString()),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () => _showPlaceholder(l10n.editProfile),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              l10n.editProfile,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({
+    required String title,
+    required Color card,
+    required Color border,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: Colors.blueGrey[700],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            Container(
+              height: 36,
+              width: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: Colors.blueGrey[400], fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.blueGrey[300]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      height: 44,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, color: color, size: 18),
+        label: Text(
+          label,
+          style: TextStyle(color: color, fontWeight: FontWeight.w600),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: color.withOpacity(0.4)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          backgroundColor: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  void _showPlaceholder(String label) {
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.actionPressed(label))),
+    );
+  }
+}
+
+class PointsPage extends StatefulWidget {
+  const PointsPage({super.key});
+
+  @override
+  State<PointsPage> createState() => _PointsPageState();
+}
+
+class _PointsPageState extends State<PointsPage> {
+  static const String _accountPointsKey = 'account_points';
+
+  int _points = 1240;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPoints());
+  }
+
+  Future<void> _loadPoints() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _points = prefs.getInt(_accountPointsKey) ?? _points;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = const Color(0xFFF1F4F9);
+    final card = Colors.white;
+    final border = Colors.blueGrey.withOpacity(0.08);
+    final accent = scheme.primary;
+    final l10n = AppLocalizations.of(context);
+    final localeTag = Localizations.localeOf(context).toLanguageTag();
+
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          l10n.points,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                children: [
+                  _buildPointsTotalCard(
+                    card: card,
+                    border: border,
+                    accent: accent,
+                    title: l10n.totalPoints,
+                    localeTag: localeTag,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle(l10n.activities),
+                  const SizedBox(height: 8),
+                  _buildActivitiesCard(
+                    card: card,
+                    border: border,
+                    choresLabel: l10n.chores,
+                    workLabel: l10n.work,
+                    freeTimeLabel: l10n.freeTime,
+                    timeOffLabel: l10n.timeOff,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle(l10n.history),
+                  const SizedBox(height: 8),
+                  _buildHistoryCard(
+                    card: card,
+                    border: border,
+                    levelUpLabel: l10n.levelUp,
+                    pointsLabel: l10n.pointsWithValue,
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildPointsTotalCard({
+    required Color card,
+    required Color border,
+    required Color accent,
+    required String title,
+    required String localeTag,
+  }) {
+    final formatted = NumberFormat.decimalPattern(localeTag).format(_points);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  accent.withOpacity(0.9),
+                  accent.withOpacity(0.6),
+                ],
+              ),
+            ),
+            child: const Icon(Icons.emoji_events, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: List.generate(
+                    5,
+                    (index) => const Padding(
+                      padding: EdgeInsets.only(right: 2),
+                      child: Icon(Icons.star, size: 10, color: Color(0xFFCBD5F5)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            formatted,
+            style: TextStyle(
+              color: accent,
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, color: Colors.black38),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: Colors.blueGrey[700],
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivitiesCard({
+    required Color card,
+    required Color border,
+    required String choresLabel,
+    required String workLabel,
+    required String freeTimeLabel,
+    required String timeOffLabel,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildActivityRow(
+            icon: Icons.check_circle,
+            iconColor: const Color(0xFF3B82F6),
+            label: choresLabel,
+            chipLabel: '+10',
+            chipColor: const Color(0xFF22C55E),
+          ),
+          _buildDivider(),
+          _buildActivityRow(
+            icon: Icons.work,
+            iconColor: const Color(0xFF60A5FA),
+            label: workLabel,
+            chipLabel: '+20',
+            chipColor: const Color(0xFFF59E0B),
+          ),
+          _buildDivider(),
+          _buildActivityRow(
+            icon: Icons.play_circle_fill,
+            iconColor: const Color(0xFF22C55E),
+            label: freeTimeLabel,
+            chipLabel: '+1',
+            chipColor: const Color(0xFFE2E8F0),
+          ),
+          _buildDivider(),
+          _buildActivityRow(
+            icon: Icons.hotel,
+            iconColor: const Color(0xFF8B5CF6),
+            label: timeOffLabel,
+            chipLabel: '+1',
+            chipColor: const Color(0xFFE2E8F0),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityRow({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String chipLabel,
+    required Color chipColor,
+  }) {
+    final isMuted = chipColor == const Color(0xFFE2E8F0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            height: 32,
+            width: 32,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: chipColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              chipLabel,
+              style: TextStyle(
+                color: isMuted ? Colors.blueGrey[500] : Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryCard({
+    required Color card,
+    required Color border,
+    required String levelUpLabel,
+    required String Function(String) pointsLabel,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildHistoryRow('Nov 16', pointsLabel('+30')),
+          _buildDivider(),
+          _buildHistoryRow('Nov 15', pointsLabel('+20')),
+          _buildDivider(),
+          _buildHistoryRow(
+            levelUpLabel,
+            pointsLabel('+25'),
+            highlight: true,
+          ),
+          _buildDivider(),
+          _buildHistoryRow('Nov 12', pointsLabel('+20')),
+          _buildDivider(),
+          _buildHistoryRow('Nov 11', pointsLabel('+11')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryRow(String label, String value, {bool highlight = false}) {
+    final labelStyle = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: highlight ? const Color(0xFF2563EB) : Colors.blueGrey[800],
+    );
+    final valueStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: highlight ? const Color(0xFF2563EB) : const Color(0xFF16A34A),
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: highlight
+          ? BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFE0F2FE),
+                  Colors.white.withOpacity(0.0),
+                ],
+              ),
+            )
+          : null,
+      child: Row(
+        children: [
+          Container(
+            height: 12,
+            width: 12,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: highlight ? const Color(0xFF60A5FA) : const Color(0xFF93C5FD),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label, style: labelStyle)),
+          Text(value, style: valueStyle),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return const Divider(height: 1, indent: 16, endIndent: 16);
+  }
+}
+
+class RewardsPage extends StatelessWidget {
+  const RewardsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = const Color(0xFFF1F4F9);
+    final card = Colors.white;
+    final border = Colors.blueGrey.withOpacity(0.08);
+    final accent = scheme.primary;
+    final l10n = AppLocalizations.of(context);
+
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          l10n.rewards,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          itemCount: 20,
+          itemBuilder: (context, index) {
+            final level = (index + 1) * 5;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildRewardRow(
+                level: level,
+                coins: level,
+                card: card,
+                border: border,
+                accent: accent,
+                levelShort: l10n.levelShort,
+                coinsLabel: l10n.coins,
+                showConnector: index != 0,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRewardRow({
+    required int level,
+    required int coins,
+    required Color card,
+    required Color border,
+    required Color accent,
+    required String levelShort,
+    required String coinsLabel,
+    required bool showConnector,
+  }) {
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 18),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 12,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 44),
+                Text(
+                  '$levelShort $level',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                const Spacer(),
+                Text(
+                  '$coins $coinsLabel',
+                  style: TextStyle(
+                    color: Colors.blueGrey[600],
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.chevron_right, color: Colors.black38),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          top: 6,
+          child: Column(
+            children: [
+              Container(
+                height: 40,
+                width: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      accent.withOpacity(0.9),
+                      const Color(0xFFFBCFE8),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withOpacity(0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    '$levelShort $level',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+              if (showConnector)
+                Container(
+                  height: 40,
+                  width: 2,
+                  margin: const EdgeInsets.only(top: 6),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class LanguagePage extends StatelessWidget {
+  const LanguagePage({
+    super.key,
+    required this.currentLocale,
+    required this.onLocaleChanged,
+  });
+
+  final Locale? currentLocale;
+  final ValueChanged<Locale> onLocaleChanged;
+
+  static const List<_LanguageOption> _options = [
+    _LanguageOption('English', Locale('en')),
+    _LanguageOption('French', Locale('fr')),
+    _LanguageOption('Spanish', Locale('es')),
+    _LanguageOption('Russian', Locale('ru')),
+    _LanguageOption('Ukrainian', Locale('uk')),
+    _LanguageOption('Bulgarian', Locale('bg')),
+    _LanguageOption('Polish', Locale('pl')),
+    _LanguageOption('Portuguese', Locale('pt')),
+    _LanguageOption('Japanese', Locale('ja')),
+    _LanguageOption('Taiwanese', Locale('zh', 'TW')),
+    _LanguageOption('Chinese (Mandarin)', Locale('zh', 'CN')),
+    _LanguageOption('Korean', Locale('ko')),
+    _LanguageOption('Arabic', Locale('ar')),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final background = const Color(0xFFF1F4F9);
+    final card = Colors.white;
+    final border = Colors.blueGrey.withOpacity(0.08);
+    final selected = _localeToString(currentLocale ?? const Locale('en'));
+    final l10n = AppLocalizations.of(context);
+
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          l10n.language,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: SafeArea(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          decoration: BoxDecoration(
+            color: card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ListView.separated(
+            itemCount: _options.length,
+            separatorBuilder: (_, __) =>
+                const Divider(height: 1, indent: 16, endIndent: 16),
+            itemBuilder: (context, index) {
+              final option = _options[index];
+              final isSelected =
+                  _localeToString(option.locale) == selected;
+              return ListTile(
+                title: Text(
+                  option.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle, color: Color(0xFF3B82F6))
+                    : null,
+                onTap: () {
+                  onLocaleChanged(option.locale);
+                  Navigator.of(context).pop();
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LanguageOption {
+  const _LanguageOption(this.label, this.locale);
+
+  final String label;
+  final Locale locale;
+}
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({
+    super.key,
+    required this.currentLocale,
+    required this.onLocaleChanged,
+  });
+
+  final Locale? currentLocale;
+  final ValueChanged<Locale> onLocaleChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final background = const Color(0xFFF1F4F9);
+    final card = Colors.white;
+    final border = Colors.blueGrey.withOpacity(0.08);
+    final accent = scheme.primary;
+    final l10n = AppLocalizations.of(context);
+    final localeTag = Localizations.localeOf(context).toLanguageTag();
+    final pointsFormatted = NumberFormat.decimalPattern(localeTag).format(1240);
 
     return Scaffold(
       backgroundColor: background,
@@ -5493,68 +7187,120 @@ class ProfilePage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(
-                context: context,
-                background: subtle,
+              _buildProfileHeader(
                 accent: accent,
                 border: border,
+                levelLabel: l10n.levelLabel(10),
+                levelPointsLabel:
+                    l10n.levelPointsLabel(10, '$pointsFormatted ${l10n.pointsShort}'),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-              _ProfileOptionTile(
-                icon: Icons.person_outline,
-                label: 'Account',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
+              _buildSection(
+                title: l10n.profile,
+                card: card,
+                border: border,
+                children: [
+                  _ProfileOptionTile(
+                    icon: Icons.person_outline,
+                    label: l10n.account,
+                    subtitle: l10n.manageProfile,
+                    accentColor: const Color(0xFF3B82F6),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AccountPage()),
+                    ),
+                  ),
+                  _ProfileOptionTile(
+                    icon: Icons.group_outlined,
+                    label: l10n.friends,
+                    accentColor: const Color(0xFF3B82F6),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const FriendsPage()),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _ProfileOptionTile(
-                icon: Icons.emoji_events_outlined,
-                label: 'Points',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
+              const SizedBox(height: 16),
+
+              _buildSection(
+                title: l10n.progress,
+                card: card,
+                border: border,
+                children: [
+                  _ProfileOptionTile(
+                    icon: Icons.emoji_events_outlined,
+                    label: l10n.points,
+                    trailingText: '$pointsFormatted ${l10n.pointsShort}',
+                    accentColor: const Color(0xFF2563EB),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PointsPage()),
+                    ),
+                  ),
+                  _ProfileOptionTile(
+                    icon: Icons.card_giftcard_outlined,
+                    label: l10n.rewards,
+                    accentColor: const Color(0xFF6366F1),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RewardsPage()),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _ProfileOptionTile(
-                icon: Icons.card_giftcard_outlined,
-                label: 'Rewards',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
+              const SizedBox(height: 16),
+
+              _buildSection(
+                title: l10n.preferences,
+                card: card,
+                border: border,
+                children: [
+                  _ProfileOptionTile(
+                    icon: Icons.translate,
+                    label: l10n.language,
+                    trailingText: _languageLabelForLocale(currentLocale),
+                    accentColor: const Color(0xFF38BDF8),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => LanguagePage(
+                          currentLocale: currentLocale,
+                          onLocaleChanged: onLocaleChanged,
+                        ),
+                      ),
+                    ),
+                  ),
+                  _ProfileOptionTile(
+                    icon: Icons.settings_outlined,
+                    label: l10n.settings,
+                    accentColor: const Color(0xFF3B82F6),
+                    cardColor: card,
+                    borderColor: border,
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _ProfileOptionTile(
-                icon: Icons.group_outlined,
-                label: 'Friends',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
-              ),
-              const SizedBox(height: 12),
-              _ProfileOptionTile(
-                icon: Icons.translate,
-                label: 'Language',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
-              ),
-              const SizedBox(height: 12),
-              _ProfileOptionTile(
-                icon: Icons.help_outline,
-                label: 'Help',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
-              ),
-              const SizedBox(height: 12),
-              _ProfileOptionTile(
-                icon: Icons.settings_outlined,
-                label: 'Settings',
-                accentColor: accent,
-                cardColor: card,
-                borderColor: border,
+              const SizedBox(height: 16),
+
+              _buildSection(
+                title: l10n.support,
+                card: card,
+                border: border,
+                children: [
+                  _ProfileOptionTile(
+                    icon: Icons.help_outline,
+                    label: l10n.help,
+                    accentColor: const Color(0xFF3B82F6),
+                    cardColor: card,
+                    borderColor: border,
+                  ),
+                ],
               ),
             ],
           ),
@@ -5563,40 +7309,74 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader({
-    required BuildContext context,
-    required Color background,
+  Widget _buildProfileHeader({
     required Color accent,
     required Color border,
+    required String levelLabel,
+    required String levelPointsLabel,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: [
+            accent.withOpacity(0.75),
+            accent.withOpacity(0.35),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: accent,
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.workspace_premium, color: Colors.white, size: 18),
-                SizedBox(width: 8),
+                const Icon(Icons.workspace_premium,
+                    color: Colors.white, size: 16),
+                const SizedBox(width: 6),
                 Text(
-                  'Level 10',
-                  style: TextStyle(
+                  levelLabel,
+                  style: const TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'John Doe',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  levelPointsLabel,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
             ),
@@ -5604,18 +7384,66 @@ class ProfilePage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Colors.white.withOpacity(0.35),
               shape: BoxShape.circle,
-              border: Border.all(color: border),
+              border: Border.all(color: Colors.white24),
             ),
             child: CircleAvatar(
-              radius: 24,
-              backgroundColor: accent,
-              child: const Icon(Icons.person, color: Colors.white, size: 26),
+              radius: 26,
+              backgroundColor: Colors.white,
+              child: Icon(Icons.person, color: accent, size: 28),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required Color card,
+    required Color border,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: Colors.blueGrey[700],
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                children[i],
+                if (i != children.length - 1)
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -5627,6 +7455,8 @@ class _ProfileOptionTile extends StatelessWidget {
     required this.accentColor,
     required this.cardColor,
     required this.borderColor,
+    this.subtitle,
+    this.trailingText,
     this.onTap,
   });
 
@@ -5635,43 +7465,59 @@ class _ProfileOptionTile extends StatelessWidget {
   final Color accentColor;
   final Color cardColor;
   final Color borderColor;
+  final String? subtitle;
+  final String? trailingText;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderColor),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             Container(
-              height: 44,
-              width: 44,
+              height: 36,
+              width: 36,
               decoration: BoxDecoration(
-                color: accentColor,
+                color: accentColor.withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: Colors.white, size: 22),
+              child: Icon(icon, color: accentColor, size: 18),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.blueGrey[800],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey[800],
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style:
+                          TextStyle(color: Colors.blueGrey[400], fontSize: 12),
+                    ),
+                  ],
+                ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios, color: Colors.blueGrey[400], size: 18),
+            if (trailingText != null)
+              Text(
+                trailingText!,
+                style: TextStyle(color: Colors.blueGrey[500], fontSize: 12),
+              ),
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right, color: Colors.blueGrey[300], size: 20),
           ],
         ),
       ),
