@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:contacts_service/contacts_service.dart';
 import 'package:intl/intl.dart';
+import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_localizations.dart';
@@ -163,8 +164,162 @@ String reminderLabelFromDuration(Duration? duration) {
   return kReminderOptions.keys.first;
 }
 
+final math.Random _idRandom = math.Random();
 
-void main() {
+String _newEventId() {
+  return '${DateTime.now().microsecondsSinceEpoch}_${_idRandom.nextInt(1 << 32)}';
+}
+
+int _stableHash(String value) {
+  var hash = 0x811c9dc5;
+  for (final codeUnit in value.codeUnits) {
+    hash ^= codeUnit;
+    hash = (hash * 0x01000193) & 0x7fffffff;
+  }
+  return hash;
+}
+
+class NotificationService {
+  NotificationService._();
+
+  static final NotificationService instance = NotificationService._();
+  static const String _channelKey = 'event_reminders';
+  static const String _channelName = 'Event reminders';
+  static const String _channelDescription =
+      'Notifications for upcoming calendar events';
+
+  bool _initialized = false;
+
+  Future<void> init() async {
+    if (_initialized) return;
+    AwesomeNotifications().initialize(
+      null,
+      [
+        NotificationChannel(
+          channelKey: _channelKey,
+          channelName: _channelName,
+          channelDescription: _channelDescription,
+          importance: NotificationImportance.High,
+          defaultColor: const Color(0xFF3B82F6),
+          ledColor: Colors.white,
+        ),
+      ],
+    );
+    await _requestPermissions();
+    _initialized = true;
+  }
+
+  Future<void> _requestPermissions() async {
+    final isAllowed = await AwesomeNotifications().isNotificationAllowed();
+    if (!isAllowed) {
+      await AwesomeNotifications().requestPermissionToSendNotifications();
+    }
+  }
+
+  Future<void> rescheduleAll(Iterable<Event> events) async {
+    if (!_initialized) return;
+    await AwesomeNotifications().cancelAll();
+    for (final event in events) {
+      await scheduleEventReminder(event);
+    }
+  }
+
+  Future<void> scheduleEventReminder(Event event) async {
+    if (!_initialized) return;
+    if (event.type == EventType.note) return;
+    final scheduledAt = _reminderTime(event);
+    if (scheduledAt == null) return;
+
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: event.notificationId,
+        channelKey: _channelKey,
+        title: event.title.isEmpty ? 'Upcoming event' : event.title,
+        body: _buildBody(event),
+        notificationLayout: NotificationLayout.Default,
+      ),
+      schedule: NotificationCalendar(
+        year: scheduledAt.year,
+        month: scheduledAt.month,
+        day: scheduledAt.day,
+        hour: scheduledAt.hour,
+        minute: scheduledAt.minute,
+        second: scheduledAt.second,
+        millisecond: 0,
+        allowWhileIdle: true,
+      ),
+    );
+  }
+
+  Future<void> cancelEventReminder(Event event) async {
+    if (!_initialized) return;
+    await AwesomeNotifications().cancel(event.notificationId);
+  }
+
+  Future<void> rescheduleEventReminder(Event oldEvent, Event newEvent) async {
+    if (!_initialized) return;
+    await cancelEventReminder(oldEvent);
+    await scheduleEventReminder(newEvent);
+  }
+
+  Future<void> showTestNotification() async {
+    if (!_initialized) return;
+    final scheduledAt = DateTime.now().add(const Duration(seconds: 5));
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: _idRandom.nextInt(1 << 31),
+        channelKey: _channelKey,
+        title: 'Test notification',
+        body: 'If you see this, notifications are working.',
+        notificationLayout: NotificationLayout.Default,
+      ),
+      schedule: NotificationCalendar(
+        year: scheduledAt.year,
+        month: scheduledAt.month,
+        day: scheduledAt.day,
+        hour: scheduledAt.hour,
+        minute: scheduledAt.minute,
+        second: scheduledAt.second,
+        millisecond: 0,
+        allowWhileIdle: true,
+      ),
+    );
+  }
+
+  DateTime? _reminderTime(Event event) {
+    if (event.reminder == null || event.startTime == null) return null;
+    final start = DateTime(
+      event.date.year,
+      event.date.month,
+      event.date.day,
+      event.startTime!.hour,
+      event.startTime!.minute,
+    );
+    final reminderAt = start.subtract(event.reminder!);
+    if (reminderAt.isBefore(DateTime.now())) return null;
+    return reminderAt;
+  }
+
+  String _buildBody(Event event) {
+    if (event.startTime == null) return event.description;
+    final start = DateTime(
+      event.date.year,
+      event.date.month,
+      event.date.day,
+      event.startTime!.hour,
+      event.startTime!.minute,
+    );
+    final formatted = DateFormat('EEE, MMM d • h:mm a').format(start);
+    if (event.description.trim().isNotEmpty) {
+      return '${event.description.trim()}\nStarts $formatted';
+    }
+    return 'Starts $formatted';
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.init();
   runApp(const CalendarApp());
 }
 
@@ -233,6 +388,7 @@ class _CalendarAppState extends State<CalendarApp> {
 }
 // Event model and serialization
 class Event {
+  final String id;
   final String title;
   final String description;
   final DateTime date;
@@ -247,6 +403,7 @@ class Event {
   final List<String> subtasks;
 
   Event({
+    required this.id,
     required this.title,
     required this.description,
     required this.date,
@@ -262,9 +419,11 @@ class Event {
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
+  int get notificationId => _stableHash(id);
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'title': title,
       'description': description,
       'date': date.toIso8601String(),
@@ -294,6 +453,10 @@ class Event {
     final start = _timeOfDayFromMap(map['startTime']);
     final end = _timeOfDayFromMap(map['endTime']);
     final reminder = _durationFromMinutes(map['reminderMinutes']);
+    final rawId = map['id'];
+    final id = rawId is String && rawId.trim().isNotEmpty
+        ? rawId
+        : _newEventId();
     final type = _eventTypeFromString(map['type']) ?? EventType.event;
     final repeat = _repeatFrequencyFromString(map['repeatFrequency']) ?? RepeatFrequency.none;
     final isCompleted = map['isCompleted'] is bool ? map['isCompleted'] as bool : _boolFromAny(map['isCompleted']);
@@ -310,6 +473,7 @@ class Event {
     }
 
     return Event(
+      id: id,
       title: (map['title'] as String?) ?? '',
       description: (map['description'] as String?) ?? '',
       date: date,
@@ -326,6 +490,7 @@ class Event {
   }
 
   Event copyWith({
+    String? id,
     String? title,
     String? description,
     DateTime? date,
@@ -340,6 +505,7 @@ class Event {
     List<String>? subtasks,
   }) {
     return Event(
+      id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
       date: date ?? this.date,
@@ -626,6 +792,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _showIntroCard = showIntroPref ?? _events.isEmpty;
     });
     unawaited(_persistEvents());
+    unawaited(NotificationService.instance.rescheduleAll(_events));
   }
 
   // Write the current events list back to disk after creation/edits.
@@ -695,6 +862,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events.add(event);
     });
     unawaited(_persistEvents());
+    unawaited(NotificationService.instance.scheduleEventReminder(event));
   }
 
   void _handleCategoriesUpdated(List<String> updated) {
@@ -2054,6 +2222,9 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         if (i != -1) _events[i] = edited;
       });
       unawaited(_persistEvents());
+      unawaited(
+        NotificationService.instance.rescheduleEventReminder(oldEvent, edited),
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Event updated!')),
       );
@@ -3142,6 +3313,7 @@ Widget _buildEventTile(Event event) {
                 _events.remove(event);
               });
               unawaited(_persistEvents());
+              unawaited(NotificationService.instance.cancelEventReminder(event));
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Event deleted')),
@@ -4318,6 +4490,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
         : <String>[];
 
     final event = Event(
+      id: _newEventId(),
       title: title,
       description: _descriptionController.text.trim(),
       date: _selectedDate,
@@ -4986,6 +5159,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
         : <String>[];
 
     final updated = Event(
+      id: widget.initial.id,
       title: title,
       description: _desc.text.trim(),
       date: _selectedDate,
@@ -6234,6 +6408,22 @@ class _AccountPageState extends State<AccountPage> {
                         subtitle: l10n.alertsReminders,
                         onTap: () => _showPlaceholder(l10n.notificationSettings),
                       ),
+                      _buildMenuTile(
+                        icon: Icons.notification_important_outlined,
+                        iconColor: const Color(0xFFEF4444),
+                        title: 'Test notification',
+                        subtitle: 'Send in 5 seconds',
+                        onTap: () {
+                          unawaited(
+                            NotificationService.instance.showTestNotification(),
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Test notification scheduled.'),
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -7284,6 +7474,24 @@ class ProfilePage extends StatelessWidget {
                     cardColor: card,
                     borderColor: border,
                   ),
+                  _ProfileOptionTile(
+                    icon: Icons.notification_important_outlined,
+                    label: 'Test notification',
+                    subtitle: 'Send in 5 seconds',
+                    accentColor: const Color(0xFFEF4444),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () {
+                      unawaited(
+                        NotificationService.instance.showTestNotification(),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Test notification scheduled.'),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -7367,7 +7575,7 @@ class ProfilePage extends StatelessWidget {
               children: [
                 const Text(
                   'John Doe',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
