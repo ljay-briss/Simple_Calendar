@@ -872,6 +872,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   void _handleNoteAdded(NoteEntry note) {
     _upsertNote(note);
+    _addCategoryIfMissing(note.category);
+  }
+
+  void _addCategoryIfMissing(String category) {
+    final trimmed = category.trim();
+    if (trimmed.isEmpty) return;
+    final exists = _categories.any(
+      (entry) => entry.toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (exists) return;
+    final updated = _normalizeCategories([..._categories, trimmed]);
+    setState(() => _categories = updated);
+    unawaited(_persistCategories());
   }
 
   @override
@@ -895,6 +908,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 
     return Scaffold(
+      extendBody: true,
       backgroundColor:
           _currentTab == HomeTab.daily ? Colors.white : const Color(0xFFF5F7FB),
       body: SafeArea(child: body),
@@ -2200,10 +2214,24 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
             ),
           ),
           const Spacer(),
+          _buildIconButton(
+            Icons.folder_outlined,
+            _showNotesCategoryManager,
+          ),
+          const SizedBox(width: 10),
           _buildIconButton(Icons.search, _showEventSearch),
         ],
       ),
     );
+  }
+
+  Future<void> _showNotesCategoryManager() async {
+    final updated = await showDialog<List<String>>(
+      context: context,
+      builder: (_) => _CategoryManagerDialog(categories: _categories),
+    );
+    if (!mounted || updated == null) return;
+    _handleCategoriesUpdated(_normalizeCategories(updated));
   }
 
 
@@ -2902,48 +2930,46 @@ Widget _buildEventTile(Event event) {
   Widget _buildBottomNavigationBar() {
     final l10n = AppLocalizations.of(context);
     final textScaleFactor = MediaQuery.textScaleFactorOf(context);
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final estimatedMinHeight = 24 + 4 + (12 * textScaleFactor) + 16;
     final minHeight = math.max(52.0, estimatedMinHeight);
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: minHeight),
-            child: Row(
-
-              children: [
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _buildBottomNavItem(
-                          Icons.calendar_today, l10n.calendar, HomeTab.calendar),
-                      _buildBottomNavItem(
-                          Icons.note_outlined, l10n.notes, HomeTab.notes),
-                      _buildBottomNavItem(
-                          Icons.view_day_outlined, l10n.daily, HomeTab.daily),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _buildAddButton(),
-              ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16, 1, 16, 1 + bottomInset),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
             ),
+          ],
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: minHeight),
+          child: Row(
+
+            children: [
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _buildBottomNavItem(
+                        Icons.calendar_today, l10n.calendar, HomeTab.calendar),
+                    _buildBottomNavItem(
+                        Icons.note_outlined, l10n.notes, HomeTab.notes),
+                    _buildBottomNavItem(
+                        Icons.view_day_outlined, l10n.daily, HomeTab.daily),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _buildAddButton(),
+            ],
           ),
         ),
       ),
