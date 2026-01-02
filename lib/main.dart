@@ -90,6 +90,14 @@ const List<String> kCategoryOptions = <String>[
   'Other',
 ];
 
+String _dateKey(DateTime date) {
+  final normalized = DateTime(date.year, date.month, date.day);
+  final year = normalized.year.toString().padLeft(4, '0');
+  final month = normalized.month.toString().padLeft(2, '0');
+  final day = normalized.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
 String _localeToString(Locale locale) {
   return locale.countryCode == null || locale.countryCode!.isEmpty
       ? locale.languageCode
@@ -402,6 +410,7 @@ class Event {
   final Duration? reminder;
   final RepeatFrequency repeatFrequency;
   final bool isCompleted;
+  final List<String> completedDates;
   final int? estimatedMinutes;
   final List<String> subtasks;
 
@@ -417,6 +426,7 @@ class Event {
     this.reminder,
     this.repeatFrequency = RepeatFrequency.none,
     this.isCompleted = false,
+    this.completedDates = const [],
     this.estimatedMinutes,
     this.subtasks = const [],
   });
@@ -437,6 +447,7 @@ class Event {
       'reminderMinutes': reminder?.inMinutes,
       'repeatFrequency': repeatFrequency.name,
       'isCompleted': isCompleted,
+      'completedDates': completedDates,
       'estimatedMinutes': estimatedMinutes,
       'subtasks': subtasks,
     };
@@ -463,6 +474,15 @@ class Event {
     final type = _eventTypeFromString(map['type']) ?? EventType.event;
     final repeat = _repeatFrequencyFromString(map['repeatFrequency']) ?? RepeatFrequency.none;
     final isCompleted = map['isCompleted'] is bool ? map['isCompleted'] as bool : _boolFromAny(map['isCompleted']);
+    final completedDatesRaw = map['completedDates'];
+    final completedDates = <String>[];
+    if (completedDatesRaw is List) {
+      for (final entry in completedDatesRaw) {
+        if (entry is String && entry.trim().isNotEmpty) {
+          completedDates.add(entry);
+        }
+      }
+    }
     final estimatedMinutesRaw = map['estimatedMinutes'];
     final estimatedMinutes = estimatedMinutesRaw is num ? estimatedMinutesRaw.round() : null;
     final subtasksRaw = map['subtasks'];
@@ -487,6 +507,7 @@ class Event {
       reminder: reminder,
       repeatFrequency: repeat,
       isCompleted: isCompleted,
+      completedDates: completedDates,
       estimatedMinutes: estimatedMinutes,
       subtasks: subtasks,
     );
@@ -504,6 +525,7 @@ class Event {
     Duration? reminder,
     RepeatFrequency? repeatFrequency,
     bool? isCompleted,
+    List<String>? completedDates,
     int? estimatedMinutes,
     List<String>? subtasks,
   }) {
@@ -519,9 +541,31 @@ class Event {
       reminder: reminder ?? this.reminder,
       repeatFrequency: repeatFrequency ?? this.repeatFrequency,
       isCompleted: isCompleted ?? this.isCompleted,
+      completedDates: completedDates ?? List<String>.from(this.completedDates),
       estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
       subtasks: subtasks ?? this.subtasks,
     );
+  }
+
+  bool isCompletedOn(DateTime date) {
+    if (repeatFrequency == RepeatFrequency.none) {
+      return isCompleted;
+    }
+    return completedDates.contains(_dateKey(date));
+  }
+
+  Event toggleCompletedOn(DateTime date) {
+    if (repeatFrequency == RepeatFrequency.none) {
+      return copyWith(isCompleted: !isCompleted);
+    }
+    final key = _dateKey(date);
+    final updated = List<String>.from(completedDates);
+    if (updated.contains(key)) {
+      updated.remove(key);
+    } else {
+      updated.add(key);
+    }
+    return copyWith(completedDates: updated);
   }
 
   static Map<String, int> _timeOfDayToMap(TimeOfDay time) {
@@ -1324,7 +1368,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                   ),
-                  ...eventsByDay[i].value.map(_buildEventTile),
+                  ...eventsByDay[i]
+                      .value
+                      .map((event) => _buildEventTile(event, occurrenceDate: eventsByDay[i].key)),
                   if (i != eventsByDay.length - 1) const SizedBox(height: 8),
                 ],
               ],
@@ -1578,13 +1624,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   minute: 0,
                 );
 
-            // snap to full hours
-            final snappedStartHour = start.hour.clamp(startHour, endHour);
-            final snappedEndHour = end.hour.clamp(snappedStartHour + 1, endHour + 1);
+            final totalMinutes = (endHour - startHour + 1) * 60;
+            final startMinutes =
+                (start.hour * 60 + start.minute) - (startHour * 60);
+            final endMinutes =
+                (end.hour * 60 + end.minute) - (startHour * 60);
+            final clampedStart = startMinutes.clamp(0, totalMinutes);
+            final clampedEnd = endMinutes.clamp(0, totalMinutes);
+            if (clampedEnd <= clampedStart) {
+              return const SizedBox.shrink();
+            }
 
-            // IMPORTANT: top includes lineOffset so it aligns to the drawn grid line
-            final top = ((snappedStartHour - startHour) * hourHeight) + lineOffset;
-            final height = (snappedEndHour - snappedStartHour) * hourHeight;
+            final top = ((clampedStart / 60) * hourHeight) + lineOffset;
+            final minHeight = hourHeight * 0.25;
+            final height =
+                math.max(minHeight, ((clampedEnd - clampedStart) / 60) * hourHeight);
 
             final left = timeColWidth + (dayIndex * dayWidth);
 
@@ -2260,7 +2314,18 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         onCategoriesChanged: _handleCategoriesUpdated,
       ),
     );
-    if (edited == null || edited.isEmpty) return;
+    if (edited == null) return;
+    if (edited.isEmpty) {
+      setState(() {
+        _events.removeWhere((event) => event.id == oldEvent.id);
+      });
+      unawaited(_persistEvents());
+      unawaited(NotificationService.instance.cancelEventReminder(oldEvent));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Event deleted')),
+      );
+      return;
+    }
     setState(() {
       final i = _events.indexOf(oldEvent);
       if (i != -1) {
@@ -2671,7 +2736,8 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
             )
           : Column(
               children: [
-                for (final event in events) _buildEventTile(event),
+                for (final event in events)
+                  _buildEventTile(event, occurrenceDate: _selectedDate),
               ],
             ),
     );
@@ -2734,7 +2800,8 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
 
 
 
-Widget _buildEventTile(Event event) {
+Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
+  final targetDate = occurrenceDate ?? _selectedDate;
   final categoryColor = _getCategoryColor(event.category);
   final timeLabel = event.hasTimeRange
       ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
@@ -2743,7 +2810,7 @@ Widget _buildEventTile(Event event) {
   final isTask = event.type == EventType.task;
   final isTimeOff = event.type == EventType.timeOff;
   final isNote = event.type == EventType.note;
-  final isCompleted = isTask && event.isCompleted;
+  final isCompleted = isTask && event.isCompletedOn(targetDate);
 
   final IconData typeIcon;
   final Color typeColor;
@@ -2812,6 +2879,7 @@ Widget _buildEventTile(Event event) {
   return InkWell(
     borderRadius: BorderRadius.circular(20),
     onTap: () => _showEditEventDialog(event),
+    onLongPress: () => _confirmDelete(event),
     child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -2882,7 +2950,7 @@ Widget _buildEventTile(Event event) {
                   constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
                   splashRadius: 16,
                   visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                  onPressed: () => _toggleTaskCompletion(event),
+                  onPressed: () => _toggleTaskCompletion(event, targetDate),
                   icon: Icon(isCompleted ? Icons.check_circle : Icons.radio_button_unchecked, size: 22),
                   color: iconColor,
                 ),
@@ -3323,22 +3391,23 @@ Widget _buildEventTile(Event event) {
     }
   }
 
-  void _toggleTaskCompletion(Event event) {
+  void _toggleTaskCompletion(Event event, DateTime occurrenceDate) {
     if (event.type != EventType.task) {
       return;
     }
-    final index = _events.indexOf(event);
+    final index = _events.indexWhere((e) => e.id == event.id);
     if (index == -1) {
       return;
     }
 
-    final toggled = event.copyWith(isCompleted: !event.isCompleted);
+    final toggled = event.toggleCompletedOn(occurrenceDate);
+    final isCompleted = toggled.isCompletedOn(occurrenceDate);
     setState(() {
       _events[index] = toggled;
     });
     unawaited(_persistEvents());
 
-    final message = toggled.isCompleted
+    final message = isCompleted
         ? 'Task marked as completed!'
         : 'Task marked as incomplete.';
     ScaffoldMessenger.of(context).showSnackBar(
@@ -3360,7 +3429,7 @@ Widget _buildEventTile(Event event) {
           TextButton(
             onPressed: () {
               setState(() {
-                _events.remove(event);
+                _events.removeWhere((entry) => entry.id == event.id);
               });
               unawaited(_persistEvents());
               unawaited(NotificationService.instance.cancelEventReminder(event));
@@ -4148,7 +4217,6 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
   }
 
-
   int? _parseEstimatedMinutes() {
     final hours = int.tryParse(_taskHoursController.text.trim());
     final minutes = int.tryParse(_taskMinutesController.text.trim());
@@ -4897,10 +4965,16 @@ class _EditEventDialogState extends State<EditEventDialog> {
                   ),
                   child: Row(
                     children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Cancel'),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: _confirmDelete,
+                        child: const Text(
+                          'Delete',
+                          style: TextStyle(color: Colors.redAccent),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -4920,6 +4994,31 @@ class _EditEventDialogState extends State<EditEventDialog> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Event'),
+        content: const Text('Delete this event and all of its repeats?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    Navigator.of(context).pop(<Event>[]);
   }
 
 
@@ -5328,23 +5427,25 @@ class _EditEventDialogState extends State<EditEventDialog> {
     final dates = _sortedSelectedDates();
     final updatedEvents = <Event>[];
     for (var i = 0; i < dates.length; i++) {
-      updatedEvents.add(
-        Event(
-          id: i == 0 ? widget.initial.id : _newEventId(),
-          title: title,
-          description: _desc.text.trim(),
-          date: dates[i],
-          startTime: _start,
-          endTime: _end,
-          category: _category,
-          type: _type,
-          reminder: reminderDuration,
-          repeatFrequency: _repeatFrequency,
-          isCompleted: widget.initial.isCompleted,
-          estimatedMinutes: estimatedMinutes,
-          subtasks: subtasks,
-        ),
-      );
+        updatedEvents.add(
+          Event(
+            id: i == 0 ? widget.initial.id : _newEventId(),
+            title: title,
+            description: _desc.text.trim(),
+            date: dates[i],
+            startTime: _start,
+            endTime: _end,
+            category: _category,
+            type: _type,
+            reminder: reminderDuration,
+            repeatFrequency: _repeatFrequency,
+            isCompleted: widget.initial.isCompleted,
+            completedDates:
+                i == 0 ? List<String>.from(widget.initial.completedDates) : const [],
+            estimatedMinutes: estimatedMinutes,
+            subtasks: subtasks,
+          ),
+        );
     }
 
     Navigator.of(context).pop(updatedEvents);
@@ -5721,7 +5822,7 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
       itemBuilder: (context, index) {
         final event = events[index];
         final isCompletedTask =
-            event.type == EventType.task && event.isCompleted;
+            event.type == EventType.task && event.isCompletedOn(event.date);
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: Colors.blue[600],
@@ -5750,7 +5851,7 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
     final dateLabel = DateFormat('MMM d, yyyy').format(event.date);
 
     final completionLabel =
-        event.type == EventType.task && event.isCompleted ? ' · Completed' : '';
+        event.type == EventType.task && event.isCompletedOn(event.date) ? ' · Completed' : '';
 
     if (event.hasTimeRange) {
       final start = DateTime(
