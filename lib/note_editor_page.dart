@@ -1,15 +1,27 @@
 part of 'main.dart';
 
-class _ChecklistItemData {
-  _ChecklistItemData({required String text, required this.isChecked})
-      : controller = TextEditingController(text: text);
-
-  final TextEditingController controller;
-  bool isChecked;
-
-  void dispose() => controller.dispose();
+class _BackspaceIntent extends Intent {
+  const _BackspaceIntent();
 }
 
+class _NoteLineData {
+  _NoteLineData({
+    required String text,
+    this.isChecklist = false,
+    this.isChecked = false,
+  })  : controller = TextEditingController(text: text),
+        focusNode = FocusNode();
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  bool isChecklist;
+  bool isChecked;
+
+  void dispose() {
+    controller.dispose();
+    focusNode.dispose();
+  }
+}
 
 class NoteEditorPage extends StatefulWidget {
   final String category;
@@ -27,74 +39,159 @@ class NoteEditorPage extends StatefulWidget {
 
 class _NoteEditorPageState extends State<NoteEditorPage> {
   late final TextEditingController _title;
-  late final TextEditingController _body;
-  bool _isChecklist = false;
-  final List<_ChecklistItemData> _checklistItems = [];
+  final List<_NoteLineData> _lines = [];
+  int? _activeLineIndex;
+  bool _suppressTextListener = false;
 
   bool _dirty = false;
 
   @override
   void initState() {
     super.initState();
-    _isChecklist = widget.existing?.isChecklist ?? false;
     _title = TextEditingController(text: widget.existing?.title ?? '');
-    _body = TextEditingController(
-      text: _isChecklist ? '' : (widget.existing?.description ?? ''),
-    );
     _title.addListener(_markDirty);
-    _body.addListener(_markDirty);
-
-        if (_isChecklist) {
-      _populateChecklistFromDescription(widget.existing?.description ?? '');
-    }
+    _populateLinesFromDescription(widget.existing?.description ?? '');
   }
 
-  void _populateChecklistFromDescription(String description) {
-    _clearChecklistControllers();
-    final lines = description.isEmpty ? [''] : description.split('\n');
-    for (final line in lines) {
-      final match = RegExp(r'^\[( |x|X)\]\s*').firstMatch(line);
+  void _populateLinesFromDescription(String description) {
+    _clearLines();
+    final rawLines = description.isEmpty ? [''] : description.split('\n');
+    for (final raw in rawLines) {
+      final match = RegExp(r'^\[( |x|X)\]\s*').firstMatch(raw);
+      final isChecklist = match != null;
       final isChecked = match != null && match.group(1)?.toLowerCase() == 'x';
-      final text = match == null ? line : line.replaceFirst(match.group(0)!, '');
-      _addChecklistItem(text: text, isChecked: isChecked, markDirty: false);
+      final text = match == null ? raw : raw.replaceFirst(match.group(0)!, '');
+      _addLine(
+        text: text,
+        isChecklist: isChecklist,
+        isChecked: isChecked,
+        markDirty: false,
+      );
     }
-    if (_checklistItems.isEmpty) {
-      _addChecklistItem(markDirty: false);
+    if (_lines.isEmpty) {
+      _addLine(markDirty: false);
+    }
+    _activeLineIndex = _lines.isEmpty ? null : 0;
+  }
+
+  void _addLine({
+    String text = '',
+    bool isChecklist = false,
+    bool isChecked = false,
+    bool markDirty = true,
+    int? insertAt,
+    bool requestFocus = false,
+  }) {
+    final line = _NoteLineData(
+      text: text,
+      isChecklist: isChecklist,
+      isChecked: isChecked,
+    );
+    line.controller.addListener(() => _handleLineChanged(line));
+    line.focusNode.addListener(() {
+      if (line.focusNode.hasFocus) {
+        _activeLineIndex = _lines.indexOf(line);
+      }
+    });
+    if (insertAt == null || insertAt < 0 || insertAt > _lines.length) {
+      _lines.add(line);
+    } else {
+      _lines.insert(insertAt, line);
+    }
+    if (markDirty) _markDirty();
+    if (requestFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) line.focusNode.requestFocus();
+      });
     }
   }
 
-  void _addChecklistItem({String text = '', bool isChecked = false, bool markDirty = true}) {
-    final item = _ChecklistItemData(text: text, isChecked: isChecked);
-    item.controller.addListener(_markDirty);
-    _checklistItems.add(item);
-    if (markDirty && !_dirty) {
-      _dirty = true;
-    }
-  }
-
-  void _removeChecklistItem(int index) {
-    if (index < 0 || index >= _checklistItems.length) return;
+  void _handleLineChanged(_NoteLineData line) {
+    if (_suppressTextListener) return;
+    _markDirty();
+    final text = line.controller.text;
+    if (!text.contains('\n')) return;
+    final parts = text.split('\n');
+    final first = parts.first;
+    final rest = parts.sublist(1);
+    final index = _lines.indexOf(line);
+    if (index < 0) return;
+    _suppressTextListener = true;
+    line.controller.value = TextEditingValue(
+      text: first,
+      selection: TextSelection.collapsed(offset: first.length),
+    );
+    _suppressTextListener = false;
+    if (rest.isEmpty) return;
     setState(() {
-      _checklistItems[index].dispose();
-      _checklistItems.removeAt(index);
-      if (_checklistItems.isEmpty) {
-        _addChecklistItem(markDirty: false);
+      var insertAt = index + 1;
+      for (final entry in rest) {
+        _addLine(
+          text: entry,
+          isChecklist: line.isChecklist,
+          isChecked: false,
+          markDirty: false,
+          insertAt: insertAt,
+        );
+        insertAt += 1;
+      }
+      _dirty = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final focusIndex = (index + 1).clamp(0, _lines.length - 1);
+      _activeLineIndex = focusIndex;
+      final target = _lines[focusIndex];
+      target.focusNode.requestFocus();
+      target.controller.selection = TextSelection.collapsed(
+        offset: target.controller.text.length,
+      );
+    });
+  }
+
+  void _removeLine(int index) {
+    if (index < 0 || index >= _lines.length) return;
+    setState(() {
+      _lines[index].dispose();
+      _lines.removeAt(index);
+      if (_lines.isEmpty) {
+        _addLine(markDirty: false);
       }
       _dirty = true;
     });
   }
 
-  void _toggleChecklist() {
+  void _toggleChecklistLine() {
+    final i = _activeLineIndex;
+    if (i == null || i < 0 || i >= _lines.length) return;
     setState(() {
-      if (_isChecklist) {
-        _body.text = _checklistItems.map((item) => item.controller.text).join('\n');
-        _clearChecklistControllers();
-        _isChecklist = false;
+      final line = _lines[i];
+      line.isChecklist = !line.isChecklist;
+      if (!line.isChecklist) {
+        line.isChecked = false;
       } else {
-        _populateChecklistFromDescription(_body.text);
-        _isChecklist = true;
+        line.controller.text = line.controller.text.replaceAll('\n', ' ');
       }
       _dirty = true;
+    });
+  }
+
+  void _handleBackspace(int index) {
+    if (index < 0 || index >= _lines.length) return;
+    final line = _lines[index];
+    if (!line.focusNode.hasFocus) return;
+    if (line.controller.text.isNotEmpty) return;
+    if (_lines.length == 1) return;
+    setState(() {
+      line.dispose();
+      _lines.removeAt(index);
+      _dirty = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _lines.isEmpty) return;
+      final nextIndex = (index - 1).clamp(0, _lines.length - 1);
+      _activeLineIndex = nextIndex;
+      _lines[nextIndex].focusNode.requestFocus();
     });
   }
 
@@ -102,25 +199,27 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     if (!_dirty) setState(() => _dirty = true);
   }
 
-
-  String _serializeChecklist() {
-    return _checklistItems
-        .map(
-          (item) => '[${item.isChecked ? 'x' : ' '}] ${item.controller.text.trim()}',
-        )
+  String _serializeLines() {
+    return _lines
+        .map((line) {
+          final text = line.controller.text;
+          if (!line.isChecklist) return text;
+          return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
+        })
         .join('\n');
   }
 
-  void _clearChecklistControllers() {
-    for (final item in _checklistItems) {
-      item.dispose();
+  void _clearLines() {
+    for (final line in _lines) {
+      line.dispose();
     }
-    _checklistItems.clear();
+    _lines.clear();
   }
 
   NoteEntry _buildResult() {
     final now = DateTime.now();
-    final description = _isChecklist ? _serializeChecklist() : _body.text;
+    final description = _serializeLines();
+    final hasChecklist = _lines.any((line) => line.isChecklist);
 
     if (widget.existing == null) {
       return NoteEntry(
@@ -133,7 +232,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
         updatedAt: now,
         isPinned: false,
         addedToCalendar: false,
-        isChecklist: _isChecklist,
+        isChecklist: hasChecklist,
       );
     }
 
@@ -141,7 +240,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
       title: _title.text.trim(),
       description: description,
       updatedAt: now,
-      isChecklist: _isChecklist,
+      isChecklist: hasChecklist,
     );
   }
 
@@ -171,8 +270,8 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
           ),
           actions: [
             IconButton(
-              icon: Icon(_isChecklist ? Icons.checklist_rtl : Icons.checklist_outlined),
-              onPressed: _toggleChecklist,
+              icon: const Icon(Icons.checklist_outlined),
+              onPressed: _toggleChecklistLine,
             ),
             IconButton(
               icon: const Icon(Icons.check),
@@ -194,7 +293,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
               ),
               const SizedBox(height: 6),
               Expanded(
-                child: _isChecklist ? _buildChecklistEditor() : _buildTextBody(),
+                child: _buildLinesEditor(),
               ),
             ],
           ),
@@ -203,85 +302,86 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     );
   }
 
-  Widget _buildTextBody() {
-    return TextField(
-      controller: _body,
-      decoration: const InputDecoration(
-        hintText: 'Start typing...',
-        border: InputBorder.none,
-      ),
-      keyboardType: TextInputType.multiline,
-      maxLines: null,
-      expands: true,
-      style: const TextStyle(fontSize: 15, height: 1.35),
-    );
-  }
-
-  Widget _buildChecklistEditor() {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.separated(
-            itemCount: _checklistItems.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 6),
-            itemBuilder: (context, index) {
-              final item = _checklistItems[index];
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.blueGrey[50],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: item.isChecked,
-                      onChanged: (value) {
-                        setState(() {
-                          item.isChecked = value ?? false;
-                          _dirty = true;
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: TextField(
-                        controller: item.controller,
-                        decoration: const InputDecoration(
-                          hintText: 'List item',
-                          border: InputBorder.none,
-                        ),
+  Widget _buildLinesEditor() {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+      itemCount: _lines.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      itemBuilder: (context, index) {
+        final line = _lines[index];
+        final isChecklist = line.isChecklist;
+        return Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.backspace): _BackspaceIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              _BackspaceIntent: CallbackAction<_BackspaceIntent>(
+                onInvoke: (intent) {
+                  _handleBackspace(index);
+                  return null;
+                },
+              ),
+            },
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isChecklist)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: Checkbox(
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity:
+                            const VisualDensity(horizontal: -4, vertical: -4),
+                        value: line.isChecked,
+                        onChanged: (value) {
+                          setState(() {
+                            line.isChecked = value ?? false;
+                            _dirty = true;
+                          });
+                        },
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => _removeChecklistItem(index),
+                  ),
+                if (isChecklist) const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: line.controller,
+                    focusNode: line.focusNode,
+                    decoration: InputDecoration(
+                      hintText: index == 0 ? 'Start typing...' : null,
+                      border: InputBorder.none,
+                      isCollapsed: true,
                     ),
-                  ],
+                    style: TextStyle(
+                      color: line.isChecklist && line.isChecked
+                          ? Colors.blueGrey
+                          : Colors.black87,
+                      decoration: line.isChecklist && line.isChecked
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
+                    ),
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    maxLines: null,
+                    minLines: 1,
+                  ),
                 ),
-              );
-            },
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            icon: const Icon(Icons.add_task),
-            label: const Text('Add item'),
-            onPressed: () => setState(() => _addChecklistItem()),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
-
 
   @override
   void dispose() {
     _title.dispose();
-    _body.dispose();
-    _clearChecklistControllers();
+    _clearLines();
     super.dispose();
   }
 }

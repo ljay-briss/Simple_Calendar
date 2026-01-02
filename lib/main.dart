@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:contacts_service/contacts_service.dart';
 import 'package:intl/intl.dart';
@@ -33,7 +34,7 @@ extension EventTypeExtension on EventType {
 }
 
 // Supported recurrence options for timed events.
-enum RepeatFrequency { none, daily, weekly, monthly }
+enum RepeatFrequency { none, daily, weekly, biweekly, monthly }
 
 extension RepeatFrequencyExtension on RepeatFrequency {
   String get label {
@@ -44,6 +45,8 @@ extension RepeatFrequencyExtension on RepeatFrequency {
         return 'Daily';
       case RepeatFrequency.weekly:
         return 'Weekly';
+      case RepeatFrequency.biweekly:
+        return 'Bi-weekly';
       case RepeatFrequency.monthly:
         return 'Monthly';
     }
@@ -1358,6 +1361,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildWeeklyFreeTimeCard(DateTime date, List<_TimeSlot> slots) {
     final totalDuration = slots.fold<Duration>(Duration.zero, (sum, slot) => sum + slot.duration);
     final dateLabel = DateFormat('EEE, MMM d').format(date);
+    final dayStart = DateTime(date.year, date.month, date.day, _dayStartHour);
+    final dayEnd = DateTime(date.year, date.month, date.day, _dayEndHour);
+    final isFreeAllDay = slots.length == 1 &&
+        slots.first.start == dayStart &&
+        slots.first.end == dayEnd;
 
     return Container(
       width: double.infinity,
@@ -1401,6 +1409,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color: Colors.blueGrey[500],
+              ),
+            )
+          else if (isFreeAllDay)
+            Text(
+              'Free all day',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.blueGrey[600],
               ),
             )
           else
@@ -2236,7 +2252,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
 
 
   Future<void> _showEditEventDialog(Event oldEvent) async {
-    final edited = await showDialog<Event>(
+    final edited = await showDialog<List<Event>>(
       context: context,
       builder: (_) => EditEventDialog(
         initial: oldEvent,
@@ -2244,19 +2260,22 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         onCategoriesChanged: _handleCategoriesUpdated,
       ),
     );
-    if (edited != null) {
-      setState(() {
-        final i = _events.indexOf(oldEvent);
-        if (i != -1) _events[i] = edited;
-      });
-      unawaited(_persistEvents());
-      unawaited(
-        NotificationService.instance.rescheduleEventReminder(oldEvent, edited),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Event updated!')),
-      );
+    if (edited == null || edited.isEmpty) return;
+    setState(() {
+      final i = _events.indexOf(oldEvent);
+      if (i != -1) {
+        _events.removeAt(i);
+      }
+      _events.addAll(edited);
+    });
+    unawaited(_persistEvents());
+    unawaited(NotificationService.instance.cancelEventReminder(oldEvent));
+    for (final event in edited) {
+      unawaited(NotificationService.instance.scheduleEventReminder(event));
     }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Event updated!')),
+    );
   }
 
 
@@ -3106,6 +3125,8 @@ Widget _buildEventTile(Event event) {
         return differenceInDays >= 0;
       case RepeatFrequency.weekly:
         return differenceInDays >= 0 && differenceInDays % 7 == 0;
+      case RepeatFrequency.biweekly:
+        return differenceInDays >= 0 && differenceInDays % 14 == 0;
       case RepeatFrequency.monthly:
         final monthsApart =
             (date.year - baseDate.year) * 12 + date.month - baseDate.month;
@@ -3162,12 +3183,7 @@ Widget _buildEventTile(Event event) {
     final blockingEvents =
         events.where((event) => event.type != EventType.note).toList();
 
-    if (blockingEvents.any((event) => !event.hasTimeRange)) {
-      return [];
-    }
-
     final date = targetDate ?? _selectedDate;
-
     final dayStart = DateTime(
       date.year,
       date.month,
@@ -3180,6 +3196,14 @@ Widget _buildEventTile(Event event) {
       date.day,
       _dayEndHour,
     );
+
+    if (blockingEvents.isEmpty) {
+      return [_TimeSlot(start: dayStart, end: dayEnd)];
+    }
+
+    if (blockingEvents.any((event) => !event.hasTimeRange)) {
+      return [];
+    }
 
     final scheduled = blockingEvents
         .where((event) => event.hasTimeRange)
@@ -3194,7 +3218,7 @@ Widget _buildEventTile(Event event) {
       ..sort((a, b) => a.start.compareTo(b.start));
 
     if (scheduled.isEmpty) {
-      return [];
+      return [_TimeSlot(start: dayStart, end: dayEnd)];
     }
 
 
@@ -3898,13 +3922,16 @@ class _AddEventDialogState extends State<AddEventDialog> {
   TimeOfDay? _endTime;
   bool _isAllDay = true;
   late List<String> _categories;
-  late DateTime _selectedDate;
+  final List<DateTime> _selectedDates = [];
+  late DateTime _lastPickedDate;
 
   @override
   void initState() {
     super.initState();
     final base = widget.selectedDate;
-    _selectedDate = DateTime(base.year, base.month, base.day);
+    final normalized = DateTime(base.year, base.month, base.day);
+    _selectedDates.add(normalized);
+    _lastPickedDate = normalized;
     _categories = _normalizeCategories(widget.categories);
     _selectedCategory = _categories.first;
   }
@@ -3941,8 +3968,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final formattedDate =
-        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
+    final formattedDate = _formatSelectedDates();
     final durationLabel = _calculatedDuration != null
         ? _formatDuration(_calculatedDuration!)
         : null;
@@ -4008,6 +4034,10 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           _sectionLabel('Date'),
                           const SizedBox(height: 8),
                           _buildDatePickerTile(formattedDate),
+                          if (_selectedDates.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildSelectedDatesChips(),
+                          ],
                           const SizedBox(height: 16),
                           DropdownButtonFormField<RepeatFrequency>(
                             initialValue: _repeatFrequency,
@@ -4392,17 +4422,62 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
   }
 
+  String _formatSelectedDates() {
+    if (_selectedDates.isEmpty) {
+      return 'Select dates';
+    }
+    if (_selectedDates.length == 1) {
+      return DateFormat('EEEE, MMM d, yyyy').format(_selectedDates.first);
+    }
+    return '${_selectedDates.length} dates selected';
+  }
+
+  List<DateTime> _sortedSelectedDates() {
+    final dates = List<DateTime>.from(_selectedDates);
+    dates.sort((a, b) => a.compareTo(b));
+    return dates;
+  }
+
+  Widget _buildSelectedDatesChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        for (final date in _sortedSelectedDates())
+          InputChip(
+            label: Text(DateFormat('MMM d').format(date)),
+            onDeleted: () => _removeSelectedDate(date),
+          ),
+      ],
+    );
+  }
+
+  void _removeSelectedDate(DateTime date) {
+    setState(() {
+      _selectedDates.removeWhere((d) => DateUtils.isSameDay(d, date));
+      if (_selectedDates.isNotEmpty) {
+        _lastPickedDate = _selectedDates.last;
+      }
+    });
+  }
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final selected = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: _lastPickedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(now.year + 10),
     );
     if (selected != null) {
       setState(() {
-        _selectedDate = DateTime(selected.year, selected.month, selected.day);
+        final normalized = DateTime(selected.year, selected.month, selected.day);
+        final exists =
+            _selectedDates.any((date) => DateUtils.isSameDay(date, normalized));
+        if (!exists) {
+          _selectedDates.add(normalized);
+        }
+        _lastPickedDate = normalized;
       });
     }
   }
@@ -4500,6 +4575,13 @@ class _AddEventDialogState extends State<AddEventDialog> {
       return;
     }
 
+    if (_selectedDates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one date.')),
+      );
+      return;
+    }
+
     if (_endTime != null && _startTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -4515,23 +4597,24 @@ class _AddEventDialogState extends State<AddEventDialog> {
         ? List<String>.from(_subtasks)
         : <String>[];
 
-    final event = Event(
-      id: _newEventId(),
-      title: title,
-      description: _descriptionController.text.trim(),
-      date: _selectedDate,
-      startTime: _startTime,
-      endTime: _endTime,
-      category: _selectedCategory,
-      type: _selectedType,
-      reminder: reminderDuration,
-      repeatFrequency: _repeatFrequency,
-      isCompleted: false,
-      estimatedMinutes: estimatedMinutes,
-      subtasks: subtasks,
-    );
-
-    widget.onEventAdded(event);
+    for (final date in _sortedSelectedDates()) {
+      final event = Event(
+        id: _newEventId(),
+        title: title,
+        description: _descriptionController.text.trim(),
+        date: date,
+        startTime: _startTime,
+        endTime: _endTime,
+        category: _selectedCategory,
+        type: _selectedType,
+        reminder: reminderDuration,
+        repeatFrequency: _repeatFrequency,
+        isCompleted: false,
+        estimatedMinutes: estimatedMinutes,
+        subtasks: subtasks,
+      );
+      widget.onEventAdded(event);
+    }
     Navigator.of(context).pop();
   }
 
@@ -4586,7 +4669,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
   TimeOfDay? _start;
   TimeOfDay? _end;
   late List<String> _categories;
-  late DateTime _selectedDate;
+  final List<DateTime> _selectedDates = [];
+  late DateTime _lastPickedDate;
 
 
   @override
@@ -4605,7 +4689,9 @@ class _EditEventDialogState extends State<EditEventDialog> {
     _repeatFrequency = init.repeatFrequency;
     _start = init.startTime;
     _end = init.endTime;
-    _selectedDate = DateTime(init.date.year, init.date.month, init.date.day);
+    final normalized = DateTime(init.date.year, init.date.month, init.date.day);
+    _selectedDates.add(normalized);
+    _lastPickedDate = normalized;
 
     final estimatedMinutes = init.estimatedMinutes ?? 0;
     final hours = estimatedMinutes ~/ 60;
@@ -4650,8 +4736,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final formattedDate =
-        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
+    final formattedDate = _formatSelectedDates();
     final durationLabel = _calculatedDuration != null
         ? _formatDuration(_calculatedDuration!)
         : null;
@@ -4717,6 +4802,10 @@ class _EditEventDialogState extends State<EditEventDialog> {
                           _sectionLabel('Date'),
                           const SizedBox(height: 8),
                           _buildDatePickerTile(formattedDate),
+                          if (_selectedDates.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _buildSelectedDatesChips(),
+                          ],
                           const SizedBox(height: 16),
                           DropdownButtonFormField<RepeatFrequency>(
                             initialValue: _repeatFrequency,
@@ -5061,17 +5150,62 @@ class _EditEventDialogState extends State<EditEventDialog> {
     );
   }
 
+  String _formatSelectedDates() {
+    if (_selectedDates.isEmpty) {
+      return 'Select dates';
+    }
+    if (_selectedDates.length == 1) {
+      return DateFormat('EEEE, MMM d, yyyy').format(_selectedDates.first);
+    }
+    return '${_selectedDates.length} dates selected';
+  }
+
+  List<DateTime> _sortedSelectedDates() {
+    final dates = List<DateTime>.from(_selectedDates);
+    dates.sort((a, b) => a.compareTo(b));
+    return dates;
+  }
+
+  Widget _buildSelectedDatesChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        for (final date in _sortedSelectedDates())
+          InputChip(
+            label: Text(DateFormat('MMM d').format(date)),
+            onDeleted: () => _removeSelectedDate(date),
+          ),
+      ],
+    );
+  }
+
+  void _removeSelectedDate(DateTime date) {
+    setState(() {
+      _selectedDates.removeWhere((d) => DateUtils.isSameDay(d, date));
+      if (_selectedDates.isNotEmpty) {
+        _lastPickedDate = _selectedDates.last;
+      }
+    });
+  }
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final selected = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: _lastPickedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(now.year + 10),
     );
     if (selected != null) {
       setState(() {
-        _selectedDate = DateTime(selected.year, selected.month, selected.day);
+        final normalized = DateTime(selected.year, selected.month, selected.day);
+        final exists =
+            _selectedDates.any((date) => DateUtils.isSameDay(date, normalized));
+        if (!exists) {
+          _selectedDates.add(normalized);
+        }
+        _lastPickedDate = normalized;
       });
     }
   }
@@ -5169,6 +5303,13 @@ class _EditEventDialogState extends State<EditEventDialog> {
       return;
     }
 
+    if (_selectedDates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one date.')),
+      );
+      return;
+    }
+
     if (_end != null && _start == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -5184,23 +5325,29 @@ class _EditEventDialogState extends State<EditEventDialog> {
         ? List<String>.from(_subtasks)
         : <String>[];
 
-    final updated = Event(
-      id: widget.initial.id,
-      title: title,
-      description: _desc.text.trim(),
-      date: _selectedDate,
-      startTime: _start,
-      endTime: _end,
-      category: _category,
-      type: _type,
-      reminder: reminderDuration,
-      repeatFrequency: _repeatFrequency,
-      isCompleted: widget.initial.isCompleted,
-      estimatedMinutes: estimatedMinutes,
-      subtasks: subtasks,
-    );
+    final dates = _sortedSelectedDates();
+    final updatedEvents = <Event>[];
+    for (var i = 0; i < dates.length; i++) {
+      updatedEvents.add(
+        Event(
+          id: i == 0 ? widget.initial.id : _newEventId(),
+          title: title,
+          description: _desc.text.trim(),
+          date: dates[i],
+          startTime: _start,
+          endTime: _end,
+          category: _category,
+          type: _type,
+          reminder: reminderDuration,
+          repeatFrequency: _repeatFrequency,
+          isCompleted: widget.initial.isCompleted,
+          estimatedMinutes: estimatedMinutes,
+          subtasks: subtasks,
+        ),
+      );
+    }
 
-    Navigator.of(context).pop(updated);
+    Navigator.of(context).pop(updatedEvents);
   }
 
   String _formatDuration(Duration duration) {

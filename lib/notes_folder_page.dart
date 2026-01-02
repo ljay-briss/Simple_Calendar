@@ -102,7 +102,6 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
   }
 
   Widget _noteRow(NoteEntry note) {
-    final preview = note.description.trim().replaceAll('\n', ' ');
     final dateLabel = _formatAppleLikeDate(note.updatedAt);
 
     return Dismissible(
@@ -174,17 +173,96 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                preview.isEmpty ? 'No additional text' : preview,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Colors.blueGrey[600], fontWeight: FontWeight.w500),
-              ),
+              _buildNotePreview(note),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildNotePreview(NoteEntry note) {
+    final lines = _previewLines(note);
+    if (lines.isEmpty) {
+      return Text(
+        'No additional text',
+        style: TextStyle(color: Colors.blueGrey[600], fontWeight: FontWeight.w500),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final line in lines)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: line.isSpacer
+                ? const SizedBox(height: 8)
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (line.isChecklist)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(
+                            line.isChecked
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            size: 14,
+                            color: line.isChecked
+                                ? Colors.blueGrey[400]
+                                : Colors.blueGrey[500],
+                          ),
+                        ),
+                      if (line.isChecklist) const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          line.text,
+                          softWrap: true,
+                          style: TextStyle(
+                            color:
+                                line.isChecked ? Colors.blueGrey[400] : Colors.blueGrey[600],
+                            fontWeight: FontWeight.w500,
+                            decoration: line.isChecked
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+      ],
+    );
+  }
+
+  List<_PreviewLine> _previewLines(NoteEntry note) {
+    final result = <_PreviewLine>[];
+    final raw = note.description;
+    if (raw.trim().isEmpty) return result;
+    final lines = raw.split('\n');
+    for (final line in lines) {
+      final trimmed = line.trimRight();
+      if (trimmed.isEmpty) {
+        result.add(const _PreviewLine(
+          text: '',
+          isChecklist: false,
+          isChecked: false,
+          isSpacer: true,
+        ));
+        continue;
+      }
+      final match = RegExp(r'^\[( |x|X)\]\s*').firstMatch(trimmed);
+      final isChecklist = match != null;
+      final isChecked = match != null && match.group(1)?.toLowerCase() == 'x';
+      final text = match == null ? trimmed : trimmed.replaceFirst(match.group(0)!, '');
+      result.add(_PreviewLine(
+        text: text,
+        isChecklist: isChecklist,
+        isChecked: isChecked,
+        isSpacer: false,
+      ));
+    }
+    return result;
   }
 
   Widget _swipeBg(IconData icon, String label, {bool isRight = false}) {
@@ -217,4 +295,18 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
     if (diff < 7) return DateFormat('EEE').format(dt);
     return DateFormat('MMM d').format(dt);
   }
+}
+
+class _PreviewLine {
+  const _PreviewLine({
+    required this.text,
+    required this.isChecklist,
+    required this.isChecked,
+    required this.isSpacer,
+  });
+
+  final String text;
+  final bool isChecklist;
+  final bool isChecked;
+  final bool isSpacer;
 }
