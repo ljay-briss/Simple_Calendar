@@ -1,5 +1,9 @@
 part of 'main.dart';
 
+const int _notePreviewLineLimit = 3;
+
+enum _NoteAction { pin, delete }
+
 class NotesFolderPage extends StatefulWidget {
   final String category;
   final List<NoteEntry> notes;
@@ -113,10 +117,13 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
           widget.onTogglePin(note.id);
           setState(() {});
           return false;
-        } else {
+        }
+        return direction == DismissDirection.endToStart;
+      },
+      onDismissed: (direction) {
+        if (direction == DismissDirection.endToStart) {
           widget.onDelete(note.id);
           setState(() {});
-          return true;
         }
       },
       child: InkWell(
@@ -170,6 +177,29 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
                     const SizedBox(width: 6),
                     Icon(Icons.push_pin, size: 16, color: Colors.blueGrey[400]),
                   ],
+                  const SizedBox(width: 4),
+                  PopupMenuButton<_NoteAction>(
+                    icon: Icon(Icons.more_horiz, color: Colors.blueGrey[500], size: 20),
+                    onSelected: (action) {
+                      if (action == _NoteAction.pin) {
+                        widget.onTogglePin(note.id);
+                        setState(() {});
+                        return;
+                      }
+                      widget.onDelete(note.id);
+                      setState(() {});
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: _NoteAction.pin,
+                        child: Text(note.isPinned ? 'Unpin' : 'Pin'),
+                      ),
+                      const PopupMenuItem(
+                        value: _NoteAction.delete,
+                        child: Text('Delete'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
@@ -182,13 +212,15 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
   }
 
   Widget _buildNotePreview(NoteEntry note) {
-    final lines = _previewLines(note);
-    if (lines.isEmpty) {
+    final allLines = _previewLines(note);
+    if (allLines.isEmpty) {
       return Text(
         'No additional text',
         style: TextStyle(color: Colors.blueGrey[600], fontWeight: FontWeight.w500),
       );
     }
+    final lines = allLines.take(_notePreviewLineLimit).toList();
+    final hasMore = allLines.length > _notePreviewLineLimit;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -214,22 +246,34 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
                           ),
                         ),
                       if (line.isChecklist) const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          line.text,
-                          softWrap: true,
-                          style: TextStyle(
-                            color:
-                                line.isChecked ? Colors.blueGrey[400] : Colors.blueGrey[600],
-                            fontWeight: FontWeight.w500,
-                            decoration: line.isChecked
-                                ? TextDecoration.lineThrough
-                                : TextDecoration.none,
+                        Expanded(
+                          child: Text(
+                            line.text,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color:
+                                  line.isChecked ? Colors.blueGrey[400] : Colors.blueGrey[600],
+                              fontWeight: FontWeight.w500,
+                              decoration: line.isChecked
+                                  ? TextDecoration.lineThrough
+                                  : TextDecoration.none,
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
+          ),
+        if (hasMore)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              '...',
+              style: TextStyle(
+                color: Colors.blueGrey[500],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
       ],
     );

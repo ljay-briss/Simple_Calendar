@@ -62,6 +62,9 @@ enum _ScheduleView { daily, weekly }
 // Weekly view tabs to switch between schedule and free time breakdowns.
 enum _WeeklyTab { schedule, freeTime }
 
+// Context menu actions for notes folders.
+enum _FolderAction { pin, delete }
+
 
 // Standard reminder presets offered in the event editor.
 const Map<String, Duration?> kReminderOptions = <String, Duration?>{
@@ -762,6 +765,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final List<Event> _events = [];
   final List<NoteEntry> _notes = [];
   List<String> _categories = List<String>.from(kCategoryOptions);
+  List<String> _pinnedNoteCategories = [];
   bool _showIntroCard = true;
   HomeTab _currentTab = HomeTab.calendar;
   _ScheduleView _currentScheduleView = _ScheduleView.daily;
@@ -773,6 +777,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const String _introCardStorageKey = 'calendar_intro_card';
   static const String _notesStorageKey = 'calendar_notes';
   static const String _categoriesStorageKey = 'calendar_categories';
+  static const String _pinnedNoteCategoriesStorageKey =
+      'calendar_notes_pinned_categories';
 
   // Hours that bound the daily/weekly time grid views.
   static const int _dayStartHour = 8;
@@ -823,6 +829,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
 
     final storedCategories = prefs.getStringList(_categoriesStorageKey);
+    final storedPinnedCategories =
+        prefs.getStringList(_pinnedNoteCategoriesStorageKey) ?? [];
     final showIntroPref = prefs.getBool(_introCardStorageKey);
 
     if (!mounted) return;
@@ -836,6 +844,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _categories = (storedCategories != null && storedCategories.isNotEmpty)
           ? storedCategories.where((c) => c.trim().isNotEmpty).toSet().toList()
           : List<String>.from(kCategoryOptions);
+      _pinnedNoteCategories =
+          _normalizePinnedCategories(storedPinnedCategories);
       _showIntroCard = showIntroPref ?? _events.isEmpty;
     });
     unawaited(_persistEvents());
@@ -855,6 +865,89 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _persistCategories() async {
     final prefs = await _getPrefs();
     await prefs.setStringList(_categoriesStorageKey, _categories);
+  }
+
+  String _categoryKey(String value) => value.trim().toLowerCase();
+
+  List<String> _normalizePinnedCategories(Iterable<String> values) {
+    final seen = <String>{};
+    final normalized = <String>[];
+    for (final entry in values) {
+      final trimmed = entry.trim();
+      if (trimmed.isEmpty) continue;
+      final key = _categoryKey(trimmed);
+      if (seen.add(key)) {
+        normalized.add(trimmed);
+      }
+    }
+    return normalized;
+  }
+
+  bool _isNoteCategoryPinned(String category) {
+    final key = _categoryKey(category);
+    for (final entry in _pinnedNoteCategories) {
+      if (_categoryKey(entry) == key) return true;
+    }
+    return false;
+  }
+
+  Future<void> _persistPinnedNoteCategories() async {
+    final prefs = await _getPrefs();
+    await prefs.setStringList(
+      _pinnedNoteCategoriesStorageKey,
+      _pinnedNoteCategories,
+    );
+  }
+
+  void _togglePinNoteCategory(String category) {
+    final key = _categoryKey(category);
+    final wasPinned = _pinnedNoteCategories.any(
+      (entry) => _categoryKey(entry) == key,
+    );
+    setState(() {
+      _pinnedNoteCategories.removeWhere(
+        (entry) => _categoryKey(entry) == key,
+      );
+      if (!wasPinned) {
+        _pinnedNoteCategories.insert(0, category);
+      }
+    });
+    unawaited(_persistPinnedNoteCategories());
+  }
+
+  Future<bool> _deleteNoteCategory(String category) async {
+    final key = _categoryKey(category);
+    final noteCount = _notes
+        .where((note) => _categoryKey(note.category) == key)
+        .length;
+    final noteLabel = noteCount == 1 ? 'note' : 'notes';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete folder?'),
+        content: Text('Delete "$category" and its $noteCount $noteLabel?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return false;
+    setState(() {
+      _notes.removeWhere((note) => _categoryKey(note.category) == key);
+      _pinnedNoteCategories.removeWhere(
+        (entry) => _categoryKey(entry) == key,
+      );
+    });
+    unawaited(_saveNotes());
+    unawaited(_persistPinnedNoteCategories());
+    return true;
   }
 
   void _upsertNote(NoteEntry note) {
@@ -2160,7 +2253,12 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         .where((c) => c.isNotEmpty)
         .toSet()
         .toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      ..sort((a, b) {
+        final aPinned = _isNoteCategoryPinned(a);
+        final bPinned = _isNoteCategoryPinned(b);
+        if (aPinned != bPinned) return aPinned ? -1 : 1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
 
     int countFor(String category) => _notes
         .where((n) => n.category.toLowerCase() == category.toLowerCase())
@@ -2193,24 +2291,46 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final category = categories[index];
-                    return _buildFolderCard(
-                      category: category,
-                      count: countFor(category),
-                      pinnedCount: pinnedCountFor(category),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => NotesFolderPage(
-                              category: category,
-                              notes: _notes,
-                              onUpsert: _upsertNote,
-                              onDelete: _deleteNote,
-                              onTogglePin: _togglePin,
-                            ),
-                          ),
-                        );
+                    return Dismissible(
+                      key: ValueKey('folder_$category'),
+                      background: _buildFolderSwipeBg(
+                        Icons.push_pin,
+                        _isNoteCategoryPinned(category) ? 'Unpin' : 'Pin',
+                      ),
+                      secondaryBackground: _buildFolderSwipeBg(
+                        Icons.delete_outline,
+                        'Delete',
+                        isRight: true,
+                      ),
+                      confirmDismiss: (direction) async {
+                        if (direction == DismissDirection.startToEnd) {
+                          _togglePinNoteCategory(category);
+                          return false;
+                        }
+                        if (direction == DismissDirection.endToStart) {
+                          return await _deleteNoteCategory(category);
+                        }
+                        return false;
                       },
+                      child: _buildFolderCard(
+                        category: category,
+                        count: countFor(category),
+                        pinnedCount: pinnedCountFor(category),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => NotesFolderPage(
+                                category: category,
+                                notes: _notes,
+                                onUpsert: _upsertNote,
+                                onDelete: _deleteNote,
+                                onTogglePin: _togglePin,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
@@ -2225,6 +2345,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     required int pinnedCount,
     required VoidCallback onTap,
   }) {
+    final isPinned = _isNoteCategoryPinned(category);
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
@@ -2249,8 +2370,29 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(category,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          category,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isPinned) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.push_pin,
+                          size: 16,
+                          color: Colors.blueGrey[400],
+                        ),
+                      ],
+                    ],
+                  ),
                   if (pinnedCount > 0) ...[
                     const SizedBox(height: 2),
                     Text('$pinnedCount pinned',
@@ -2261,10 +2403,29 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
             ),
             Text('$count',
                 style: TextStyle(color: Colors.blueGrey[400], fontWeight: FontWeight.w600)),
-            const SizedBox(width: 6),
+            const SizedBox(width: 2),
             Icon(Icons.chevron_right, color: Colors.blueGrey[300]),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFolderSwipeBg(IconData icon, String label, {bool isRight = false}) {
+    return Container(
+      alignment: isRight ? Alignment.centerRight : Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey[100],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.blueGrey[700]),
+          const SizedBox(width: 8),
+          Text(label, style: TextStyle(color: Colors.blueGrey[700], fontWeight: FontWeight.w700)),
+        ],
       ),
     );
   }

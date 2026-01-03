@@ -4,6 +4,28 @@ class _BackspaceIntent extends Intent {
   const _BackspaceIntent();
 }
 
+class _BackspaceAction extends CallbackAction<_BackspaceIntent> {
+  _BackspaceAction({
+    required this.shouldHandle,
+    required this.onHandled,
+  }) : super(onInvoke: (intent) {
+    if (shouldHandle()) {
+      onHandled();
+      return null;
+    }
+    return null;
+  });
+
+  final bool Function() shouldHandle;
+  final VoidCallback onHandled;
+  
+  @override
+  bool consumesKey(_BackspaceIntent intent) {
+    return shouldHandle();
+  }
+}
+
+
 class _NoteLineData {
   _NoteLineData({
     required String text,
@@ -176,38 +198,72 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     });
   }
 
-  void _handleBackspace(int index) {
-    if (index < 0 || index >= _lines.length) return;
-    final line = _lines[index];
-    if (!line.focusNode.hasFocus) return;
-    if (line.controller.text.isNotEmpty) return;
-    if (_lines.length == 1) return;
-    setState(() {
-      line.dispose();
-      _lines.removeAt(index);
-      _dirty = true;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _lines.isEmpty) return;
-      final nextIndex = (index - 1).clamp(0, _lines.length - 1);
-      _activeLineIndex = nextIndex;
-      _lines[nextIndex].focusNode.requestFocus();
-    });
-  }
+void _handleBackspace(int index) {
+  if (index < 0 || index >= _lines.length) return;
+  final line = _lines[index];
+  if (!line.focusNode.hasFocus) return;
+
+  // ✅ consider spaces as empty
+  if (line.controller.text.trim().isNotEmpty) return;
+
+  if (_lines.length == 1) return;
+
+  setState(() {
+    line.dispose();
+    _lines.removeAt(index);
+    _dirty = true;
+  });
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted || _lines.isEmpty) return;
+    final prevIndex = (index - 1).clamp(0, _lines.length - 1);
+    _activeLineIndex = prevIndex;
+    final prev = _lines[prevIndex];
+    prev.focusNode.requestFocus();
+
+    // ✅ put cursor at end of previous line (feels natural)
+    prev.controller.selection = TextSelection.collapsed(
+      offset: prev.controller.text.length,
+    );
+  });
+}
+
+bool _shouldHandleBackspace(_NoteLineData line) {
+  if (!line.focusNode.hasFocus) return false;
+  if (_lines.length == 1) return false;
+
+  final selection = line.controller.selection;
+  if (!selection.isValid || !selection.isCollapsed) return false;
+
+  final text = line.controller.text;
+
+  // Only intercept when line is completely empty (not even spaces)
+  return text.isEmpty;
+}
+
+
+Map<ShortcutActivator, Intent> _lineShortcuts(_NoteLineData line) {
+  return const <ShortcutActivator, Intent>{
+    SingleActivator(LogicalKeyboardKey.backspace): _BackspaceIntent(),
+  };
+}
+
 
   void _markDirty() {
     if (!_dirty) setState(() => _dirty = true);
   }
 
-  String _serializeLines() {
-    return _lines
-        .map((line) {
-          final text = line.controller.text;
-          if (!line.isChecklist) return text;
-          return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
-        })
-        .join('\n');
-  }
+String _serializeLines() {
+  return _lines
+      .where((line) => line.controller.text.trim().isNotEmpty || line.isChecklist)
+      .map((line) {
+        final text = line.controller.text;
+        if (!line.isChecklist) return text;
+        return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
+      })
+      .join('\n');
+}
+
 
   void _clearLines() {
     for (final line in _lines) {
@@ -302,81 +358,78 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     );
   }
 
-  Widget _buildLinesEditor() {
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-      itemCount: _lines.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 2),
-      itemBuilder: (context, index) {
-        final line = _lines[index];
-        final isChecklist = line.isChecklist;
-        return Shortcuts(
-          shortcuts: const <ShortcutActivator, Intent>{
-            SingleActivator(LogicalKeyboardKey.backspace): _BackspaceIntent(),
-          },
-          child: Actions(
-            actions: <Type, Action<Intent>>{
-              _BackspaceIntent: CallbackAction<_BackspaceIntent>(
-                onInvoke: (intent) {
-                  _handleBackspace(index);
-                  return null;
-                },
-              ),
-            },
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (isChecklist)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: Checkbox(
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity:
-                            const VisualDensity(horizontal: -4, vertical: -4),
-                        value: line.isChecked,
-                        onChanged: (value) {
-                          setState(() {
-                            line.isChecked = value ?? false;
-                            _dirty = true;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                if (isChecklist) const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: line.controller,
-                    focusNode: line.focusNode,
-                    decoration: InputDecoration(
-                      hintText: index == 0 ? 'Start typing...' : null,
-                      border: InputBorder.none,
-                      isCollapsed: true,
-                    ),
-                    style: TextStyle(
-                      color: line.isChecklist && line.isChecked
-                          ? Colors.blueGrey
-                          : Colors.black87,
-                      decoration: line.isChecklist && line.isChecked
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                    ),
-                    keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline,
-                    maxLines: null,
-                    minLines: 1,
+Widget _buildLinesEditor() {
+  return ListView.separated(
+    padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+    itemCount: _lines.length,
+    separatorBuilder: (_, __) => const SizedBox(height: 2),
+    itemBuilder: (context, index) {
+      final line = _lines[index];
+      final isChecklist = line.isChecklist;
+      return Focus(
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent && 
+              event.logicalKey == LogicalKeyboardKey.backspace) {
+            if (_shouldHandleBackspace(line)) {
+              _handleBackspace(index);
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isChecklist)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity:
+                        const VisualDensity(horizontal: -4, vertical: -4),
+                    value: line.isChecked,
+                    onChanged: (value) {
+                      setState(() {
+                        line.isChecked = value ?? false;
+                        _dirty = true;
+                      });
+                    },
                   ),
                 ),
-              ],
+              ),
+            if (isChecklist) const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: line.controller,
+                focusNode: line.focusNode,
+                decoration: InputDecoration(
+                  hintText: index == 0 ? 'Start typing...' : null,
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                ),
+                style: TextStyle(
+                  color: line.isChecklist && line.isChecked
+                      ? Colors.blueGrey
+                      : Colors.black87,
+                  decoration: line.isChecklist && line.isChecked
+                      ? TextDecoration.lineThrough
+                      : TextDecoration.none,
+                ),
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                maxLines: null,
+                minLines: 1,
+              ),
             ),
-          ),
-        );
-      },
-    );
-  }
+          ],
+        ),
+      );
+    },
+  );
+}
 
   @override
   void dispose() {
