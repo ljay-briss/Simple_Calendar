@@ -8,7 +8,7 @@ class NotesFolderPage extends StatefulWidget {
   final String category;
   final List<NoteEntry> notes;
   final void Function(NoteEntry note) onUpsert;
-  final void Function(String noteId) onDelete;
+  final void Function(NoteEntry note) onDelete;
   final void Function(String noteId) onTogglePin;
 
   const NotesFolderPage({
@@ -122,8 +122,9 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
       },
       onDismissed: (direction) {
         if (direction == DismissDirection.endToStart) {
-          widget.onDelete(note.id);
+          widget.onDelete(note);
           setState(() {});
+          _showUndoDelete(note);
         }
       },
       child: InkWell(
@@ -186,7 +187,7 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
                         setState(() {});
                         return;
                       }
-                      widget.onDelete(note.id);
+                      widget.onDelete(note);
                       setState(() {});
                     },
                     itemBuilder: (context) => [
@@ -276,6 +277,23 @@ class _NotesFolderPageState extends State<NotesFolderPage> {
             ),
           ),
       ],
+    );
+  }
+
+  void _showUndoDelete(NoteEntry note) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Note deleted'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () {
+            widget.onUpsert(note);
+            setState(() {});
+          },
+        ),
+      ),
     );
   }
 

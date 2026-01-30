@@ -93,12 +93,21 @@ const List<String> kCategoryOptions = <String>[
   'Other',
 ];
 
+const String kArchiveReasonDeleted = 'deleted';
+const String kArchiveReasonCompleted = 'completed';
+
 String _dateKey(DateTime date) {
   final normalized = DateTime(date.year, date.month, date.day);
   final year = normalized.year.toString().padLeft(4, '0');
   final month = normalized.month.toString().padLeft(2, '0');
   final day = normalized.day.toString().padLeft(2, '0');
   return '$year-$month-$day';
+}
+
+int daysBetweenUtc(DateTime start, DateTime end) {
+  final startUtc = DateTime.utc(start.year, start.month, start.day);
+  final endUtc = DateTime.utc(end.year, end.month, end.day);
+  return endUtc.difference(startUtc).inDays;
 }
 
 String _localeToString(Locale locale) {
@@ -742,6 +751,123 @@ class NoteEntry {
   }
 }
 
+class ArchiveEntry {
+  const ArchiveEntry({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.category,
+    required this.type,
+    required this.reason,
+    required this.archivedAt,
+    this.date,
+    this.payload,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String category;
+  final String type;
+  final String reason;
+  final DateTime archivedAt;
+  final DateTime? date;
+  final Map<String, dynamic>? payload;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'category': category,
+      'type': type,
+      'reason': reason,
+      'archivedAt': archivedAt.toIso8601String(),
+      'date': date?.toIso8601String(),
+      'payload': payload,
+    };
+  }
+
+  factory ArchiveEntry.fromMap(Map<String, dynamic> map) {
+    DateTime? parseOpt(String? value) {
+      if (value == null || value.isEmpty) return null;
+      try {
+        return DateTime.parse(value);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    DateTime parseOrNow(String? value) {
+      if (value == null || value.isEmpty) return DateTime.now();
+      try {
+        return DateTime.parse(value);
+      } catch (_) {
+        return DateTime.now();
+      }
+    }
+
+    final rawPayload = map['payload'];
+    Map<String, dynamic>? payload;
+    if (rawPayload is Map) {
+      payload = Map<String, dynamic>.from(rawPayload);
+    }
+
+    return ArchiveEntry(
+      id: (map['id'] as String?) ?? '',
+      title: (map['title'] as String?) ?? '',
+      description: (map['description'] as String?) ?? '',
+      category: (map['category'] as String?) ?? '',
+      type: (map['type'] as String?) ?? 'event',
+      reason: (map['reason'] as String?) ?? kArchiveReasonDeleted,
+      archivedAt: parseOrNow(map['archivedAt'] as String?),
+      date: parseOpt(map['date'] as String?),
+      payload: payload,
+    );
+  }
+
+  factory ArchiveEntry.deletedEvent(Event event) {
+    return ArchiveEntry(
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      category: event.category,
+      type: event.type.name,
+      reason: kArchiveReasonDeleted,
+      archivedAt: DateTime.now(),
+      date: event.date,
+      payload: event.toMap(),
+    );
+  }
+
+  factory ArchiveEntry.deletedNote(NoteEntry note) {
+    return ArchiveEntry(
+      id: note.id,
+      title: note.title,
+      description: note.description,
+      category: note.category,
+      type: EventType.note.name,
+      reason: kArchiveReasonDeleted,
+      archivedAt: DateTime.now(),
+      date: note.date ?? note.updatedAt,
+      payload: note.toMap(),
+    );
+  }
+
+  factory ArchiveEntry.completedTask(Event event, DateTime occurrenceDate) {
+    return ArchiveEntry(
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      category: event.category,
+      type: event.type.name,
+      reason: kArchiveReasonCompleted,
+      archivedAt: DateTime.now(),
+      date: occurrenceDate,
+    );
+  }
+}
+
 
 
 class CalendarScreen extends StatefulWidget {
@@ -764,6 +890,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
   final List<Event> _events = [];
   final List<NoteEntry> _notes = [];
+  final List<ArchiveEntry> _archiveEntries = [];
   List<String> _categories = List<String>.from(kCategoryOptions);
   List<String> _pinnedNoteCategories = [];
   bool _showIntroCard = true;
@@ -779,6 +906,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const String _categoriesStorageKey = 'calendar_categories';
   static const String _pinnedNoteCategoriesStorageKey =
       'calendar_notes_pinned_categories';
+  static const String _archiveStorageKey = 'calendar_archive';
 
   // Hours that bound the daily/weekly time grid views.
   static const int _dayStartHour = 8;
@@ -828,6 +956,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
     }
 
+    final storedArchive = prefs.getStringList(_archiveStorageKey) ?? [];
+    final loadedArchive = <ArchiveEntry>[];
+    for (final jsonString in storedArchive) {
+      try {
+        final decoded = jsonDecode(jsonString);
+        if (decoded is Map<String, dynamic>) {
+          loadedArchive.add(ArchiveEntry.fromMap(decoded));
+        }
+      } catch (_) {
+        // Ignore malformed entries.
+      }
+    }
+
     final storedCategories = prefs.getStringList(_categoriesStorageKey);
     final storedPinnedCategories =
         prefs.getStringList(_pinnedNoteCategoriesStorageKey) ?? [];
@@ -841,6 +982,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _notes
         ..clear()
         ..addAll(loadedNotes);
+      _archiveEntries
+        ..clear()
+        ..addAll(loadedArchive);
       _categories = (storedCategories != null && storedCategories.isNotEmpty)
           ? storedCategories.where((c) => c.trim().isNotEmpty).toSet().toList()
           : List<String>.from(kCategoryOptions);
@@ -917,9 +1061,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<bool> _deleteNoteCategory(String category) async {
     final key = _categoryKey(category);
-    final noteCount = _notes
-        .where((note) => _categoryKey(note.category) == key)
-        .length;
+    final notesToDelete =
+        _notes.where((note) => _categoryKey(note.category) == key).toList();
+    final noteCount = notesToDelete.length;
     final noteLabel = noteCount == 1 ? 'note' : 'notes';
     final confirmed = await showDialog<bool>(
       context: context,
@@ -945,6 +1089,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         (entry) => _categoryKey(entry) == key,
       );
     });
+    if (notesToDelete.isNotEmpty) {
+      _addArchiveEntries(
+        notesToDelete.map((note) => ArchiveEntry.deletedNote(note)),
+      );
+    }
     unawaited(_saveNotes());
     unawaited(_persistPinnedNoteCategories());
     return true;
@@ -952,18 +1101,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   void _upsertNote(NoteEntry note) {
     final i = _notes.indexWhere((n) => n.id == note.id);
+    var removedFromArchive = false;
     setState(() {
       if (i == -1) {
         _notes.add(note);
       } else {
         _notes[i] = note;
       }
+      removedFromArchive =
+          _removeDeletedArchiveEntry(note.id, EventType.note.name);
     });
     unawaited(_saveNotes());
+    if (removedFromArchive) {
+      unawaited(_saveArchive());
+    }
   }
 
-  void _deleteNote(String id) {
-    setState(() => _notes.removeWhere((n) => n.id == id));
+  void _deleteNote(NoteEntry note) {
+    setState(() {
+      _notes.removeWhere((n) => n.id == note.id);
+    });
+    _addArchiveEntry(ArchiveEntry.deletedNote(note));
     unawaited(_saveNotes());
   }
 
@@ -986,6 +1144,55 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final prefs = await _getPrefs();
     final encoded = _notes.map((note) => jsonEncode(note.toMap())).toList();
     await prefs.setStringList(_notesStorageKey, encoded);
+  }
+
+  Future<void> _saveArchive() async {
+    final prefs = await _getPrefs();
+    final encoded =
+        _archiveEntries.map((entry) => jsonEncode(entry.toMap())).toList();
+    await prefs.setStringList(_archiveStorageKey, encoded);
+  }
+
+  bool _isSameArchiveEntry(ArchiveEntry a, ArchiveEntry b) {
+    if (a.id != b.id || a.reason != b.reason || a.type != b.type) {
+      return false;
+    }
+    if (a.date == null && b.date == null) return true;
+    if (a.date != null && b.date != null) {
+      return _isSameDay(a.date!, b.date!);
+    }
+    return false;
+  }
+
+  bool _hasArchiveEntry(ArchiveEntry entry) {
+    return _archiveEntries.any((existing) => _isSameArchiveEntry(existing, entry));
+  }
+
+  void _addArchiveEntries(Iterable<ArchiveEntry> entries) {
+    final toAdd = <ArchiveEntry>[];
+    for (final entry in entries) {
+      if (!_hasArchiveEntry(entry)) {
+        toAdd.add(entry);
+      }
+    }
+    if (toAdd.isEmpty) return;
+    setState(() {
+      _archiveEntries.insertAll(0, toAdd);
+    });
+    unawaited(_saveArchive());
+  }
+
+  void _addArchiveEntry(ArchiveEntry entry) {
+    _addArchiveEntries([entry]);
+  }
+
+  bool _removeDeletedArchiveEntry(String id, String type) {
+    final before = _archiveEntries.length;
+    _archiveEntries.removeWhere((entry) =>
+        entry.id == id &&
+        entry.type == type &&
+        entry.reason == kArchiveReasonDeleted);
+    return _archiveEntries.length != before;
   }
 
   // Remember whether the intro banner is dismissed so it only shows once.
@@ -2477,10 +2684,15 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     );
     if (edited == null) return;
     if (edited.isEmpty) {
+      final archiveEntry = ArchiveEntry.deletedEvent(oldEvent);
       setState(() {
         _events.removeWhere((event) => event.id == oldEvent.id);
+        if (!_hasArchiveEntry(archiveEntry)) {
+          _archiveEntries.insert(0, archiveEntry);
+        }
       });
       unawaited(_persistEvents());
+      unawaited(_saveArchive());
       unawaited(NotificationService.instance.cancelEventReminder(oldEvent));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Event deleted')),
@@ -3318,7 +3530,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     return _events
         .where(
           (event) =>
-              event.type != EventType.note && _occursOnDate(event, targetDate),
+              event.type != EventType.note &&
+              _occursOnDate(event, targetDate) &&
+              !_isTaskHiddenFromCalendar(event, targetDate),
         )
         .toList()
       ..sort((a, b) {
@@ -3337,6 +3551,14 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         date1.day == date2.day;
   }
 
+  bool _isTaskHiddenFromCalendar(Event event, DateTime targetDate) {
+    if (event.type != EventType.task) return false;
+    if (event.repeatFrequency != RepeatFrequency.none) {
+      return event.completedDates.isNotEmpty;
+    }
+    return event.isCompletedOn(targetDate);
+  }
+
   bool _occursOnDate(Event event, DateTime date) {
     final baseDate = DateTime(event.date.year, event.date.month, event.date.day);
     if (_isSameDay(baseDate, date)) {
@@ -3347,7 +3569,7 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       return false;
     }
 
-    final differenceInDays = date.difference(baseDate).inDays;
+    final differenceInDays = daysBetweenUtc(baseDate, date);
 
     switch (event.repeatFrequency) {
       case RepeatFrequency.daily:
@@ -3568,6 +3790,10 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     });
     unawaited(_persistEvents());
 
+    if (isCompleted) {
+      _addArchiveEntry(ArchiveEntry.completedTask(toggled, occurrenceDate));
+    }
+
     final message = isCompleted
         ? 'Task marked as completed!'
         : 'Task marked as incomplete.';
@@ -3589,10 +3815,15 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           ),
           TextButton(
             onPressed: () {
+              final archiveEntry = ArchiveEntry.deletedEvent(event);
               setState(() {
                 _events.removeWhere((entry) => entry.id == event.id);
+                if (!_hasArchiveEntry(archiveEntry)) {
+                  _archiveEntries.insert(0, archiveEntry);
+                }
               });
               unawaited(_persistEvents());
+              unawaited(_saveArchive());
               unawaited(NotificationService.instance.cancelEventReminder(event));
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
@@ -6882,6 +7113,15 @@ class _AccountPageState extends State<AccountPage> {
                             Localizations.localeOf(context)),
                         onTap: () => _showPlaceholder(l10n.language),
                       ),
+                      _buildMenuTile(
+                        icon: Icons.archive_outlined,
+                        iconColor: const Color(0xFF6366F1),
+                        title: 'Archive',
+                        subtitle: 'Deleted, completed, and past items',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ArchivePage()),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -7519,6 +7759,442 @@ class _PointsPageState extends State<PointsPage> {
   }
 }
 
+class ArchivePage extends StatefulWidget {
+  const ArchivePage({super.key});
+
+  @override
+  State<ArchivePage> createState() => _ArchivePageState();
+}
+
+class _ArchivePageState extends State<ArchivePage> {
+  static const String _eventsStorageKey = 'calendar_events';
+  static const String _notesStorageKey = 'calendar_notes';
+  static const String _archiveStorageKey = 'calendar_archive';
+
+  bool _isLoading = true;
+  List<Event> _events = const [];
+  List<NoteEntry> _notes = const [];
+  List<ArchiveEntry> _archiveEntries = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadArchiveData());
+  }
+
+  Future<void> _loadArchiveData() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final storedEvents = prefs.getStringList(_eventsStorageKey) ?? [];
+    final loadedEvents = <Event>[];
+    for (final jsonString in storedEvents) {
+      try {
+        final decoded = jsonDecode(jsonString);
+        if (decoded is Map<String, dynamic>) {
+          loadedEvents.add(Event.fromMap(decoded));
+        }
+      } catch (_) {
+        // Ignore malformed entries.
+      }
+    }
+
+    final storedNotes = prefs.getStringList(_notesStorageKey) ?? [];
+    final loadedNotes = <NoteEntry>[];
+    for (final jsonString in storedNotes) {
+      try {
+        final decoded = jsonDecode(jsonString);
+        if (decoded is Map<String, dynamic>) {
+          loadedNotes.add(NoteEntry.fromMap(decoded));
+        }
+      } catch (_) {
+        // Ignore malformed entries.
+      }
+    }
+
+    final storedArchive = prefs.getStringList(_archiveStorageKey) ?? [];
+    final loadedArchive = <ArchiveEntry>[];
+    for (final jsonString in storedArchive) {
+      try {
+        final decoded = jsonDecode(jsonString);
+        if (decoded is Map<String, dynamic>) {
+          loadedArchive.add(ArchiveEntry.fromMap(decoded));
+        }
+      } catch (_) {
+        // Ignore malformed entries.
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _events = loadedEvents;
+      _notes = loadedNotes;
+      _archiveEntries = loadedArchive;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = _events
+        .where((event) => event.type != EventType.note)
+        .map((event) => jsonEncode(event.toMap()))
+        .toList();
+    await prefs.setStringList(_eventsStorageKey, encoded);
+  }
+
+  Future<void> _saveNotes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = _notes.map((note) => jsonEncode(note.toMap())).toList();
+    await prefs.setStringList(_notesStorageKey, encoded);
+  }
+
+  Future<void> _saveArchiveEntries() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded =
+        _archiveEntries.map((entry) => jsonEncode(entry.toMap())).toList();
+    await prefs.setStringList(_archiveStorageKey, encoded);
+  }
+
+  void _removeArchiveEntry(ArchiveEntry entry) {
+    setState(() {
+      _archiveEntries.remove(entry);
+    });
+  }
+
+  void _showArchiveMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _restoreDeletedEntry(ArchiveEntry entry) async {
+    if (entry.payload == null) {
+      _showArchiveMessage('Unable to restore older archive item.');
+      return;
+    }
+    if (entry.type == EventType.note.name) {
+      final note = NoteEntry.fromMap(entry.payload!);
+      final exists = _notes.any((n) => n.id == note.id);
+      if (!exists) {
+        setState(() {
+          _notes.add(note);
+        });
+        await _saveNotes();
+      }
+      _removeArchiveEntry(entry);
+      await _saveArchiveEntries();
+      _showArchiveMessage('Note restored.');
+      return;
+    }
+
+    final event = Event.fromMap(entry.payload!);
+    final exists = _events.any((e) => e.id == event.id);
+    if (!exists) {
+      setState(() {
+        _events.add(event);
+      });
+      await _saveEvents();
+      unawaited(NotificationService.instance.scheduleEventReminder(event));
+    }
+    _removeArchiveEntry(entry);
+    await _saveArchiveEntries();
+    _showArchiveMessage('Event restored.');
+  }
+
+  Future<void> _restoreCompletedEntry(ArchiveEntry entry) async {
+    if (entry.date == null) {
+      _showArchiveMessage('Missing completion date for this item.');
+      return;
+    }
+    final index = _events.indexWhere((event) => event.id == entry.id);
+    if (index == -1) {
+      _showArchiveMessage('Original task not found.');
+      return;
+    }
+    final event = _events[index];
+    if (event.type != EventType.task) {
+      _showArchiveMessage('Only tasks can be unarchived.');
+      return;
+    }
+    if (event.isCompletedOn(entry.date!)) {
+      final updated = event.toggleCompletedOn(entry.date!);
+      setState(() {
+        _events[index] = updated;
+      });
+      await _saveEvents();
+    }
+    _removeArchiveEntry(entry);
+    await _saveArchiveEntries();
+    _showArchiveMessage('Task marked as incomplete.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final background = const Color(0xFFF0F3F7);
+    final card = Colors.white;
+    final border = Colors.blueGrey.withOpacity(0.08);
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    final deleted = _archiveEntries
+        .where((entry) => entry.reason == kArchiveReasonDeleted)
+        .toList()
+      ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
+
+    final completed = _archiveEntries
+        .where((entry) => entry.reason == kArchiveReasonCompleted)
+        .toList()
+      ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
+
+    final past = _events
+        .where((event) =>
+            event.repeatFrequency == RepeatFrequency.none &&
+            DateTime(event.date.year, event.date.month, event.date.day)
+                .isBefore(todayDate))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        centerTitle: true,
+        title: const Text(
+          'Archive',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildSectionTitle('Deleted'),
+                  if (deleted.isEmpty)
+                    _buildEmptyState('No deleted items yet.')
+                  else
+                    ...deleted.map(
+                      (entry) => _buildArchiveTile(
+                        card: card,
+                        border: border,
+                        icon: _iconForArchiveEntry(entry),
+                        title: _titleForArchiveEntry(entry),
+                        subtitle: _subtitleForArchiveEntry(entry, 'Deleted'),
+                        trailing: _buildArchiveAction(
+                          label: 'Restore',
+                          onTap: () => _restoreDeletedEntry(entry),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  _buildSectionTitle('Completed'),
+                  if (completed.isEmpty)
+                    _buildEmptyState('No completed items yet.')
+                  else
+                    ...completed.map(
+                      (entry) => _buildArchiveTile(
+                        card: card,
+                        border: border,
+                        icon: _iconForArchiveEntry(entry),
+                        title: _titleForArchiveEntry(entry),
+                        subtitle: _subtitleForArchiveEntry(entry, 'Completed'),
+                        trailing: _buildArchiveAction(
+                          label: 'Unarchive',
+                          onTap: () => _restoreCompletedEntry(entry),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  _buildSectionTitle('Past'),
+                  if (past.isEmpty)
+                    _buildEmptyState('No past items yet.')
+                  else
+                    ...past.map(
+                      (event) => _buildArchiveTile(
+                        card: card,
+                        border: border,
+                        icon: _iconForEvent(event),
+                        title: event.title.isEmpty ? 'Untitled' : event.title,
+                        subtitle: _subtitleForPastEvent(event),
+                      ),
+                    ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: Colors.blueGrey[700],
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        message,
+        style: TextStyle(color: Colors.blueGrey[400]),
+      ),
+    );
+  }
+
+  Widget _buildArchiveTile({
+    required Color card,
+    required Color border,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    Widget? trailing,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey[50],
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: Colors.blueGrey[700], size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Colors.blueGrey[500],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildArchiveAction({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return TextButton(
+      onPressed: onTap,
+      child: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  IconData _iconForArchiveEntry(ArchiveEntry entry) {
+    switch (entry.type) {
+      case 'note':
+        return Icons.note_outlined;
+      case 'task':
+        return Icons.check_circle_outline;
+      case 'timeOff':
+        return Icons.beach_access_outlined;
+      default:
+        return Icons.event_outlined;
+    }
+  }
+
+  IconData _iconForEvent(Event event) {
+    switch (event.type) {
+      case EventType.task:
+        return Icons.check_circle_outline;
+      case EventType.timeOff:
+        return Icons.beach_access_outlined;
+      case EventType.note:
+        return Icons.note_outlined;
+      case EventType.event:
+        return Icons.event_outlined;
+    }
+  }
+
+  String _titleForArchiveEntry(ArchiveEntry entry) {
+    if (entry.title.trim().isEmpty) return 'Untitled';
+    return entry.title;
+  }
+
+  String _subtitleForArchiveEntry(ArchiveEntry entry, String reasonLabel) {
+    final typeLabel = _typeLabel(entry.type);
+    final dateLabel = _formatDate(entry.date ?? entry.archivedAt);
+    return '$reasonLabel · $typeLabel · $dateLabel';
+  }
+
+  String _subtitleForPastEvent(Event event) {
+    final typeLabel = event.type.label;
+    final dateLabel = _formatDate(event.date);
+    return 'Past · $typeLabel · $dateLabel';
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'task':
+        return 'Task';
+      case 'note':
+        return 'Note';
+      case 'timeOff':
+        return 'Time off';
+      default:
+        return 'Event';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return DateFormat('MMM d, yyyy').format(date);
+  }
+}
+
 class RewardsPage extends StatelessWidget {
   const RewardsPage({super.key});
 
@@ -7908,6 +8584,17 @@ class ProfilePage extends StatelessWidget {
                     accentColor: const Color(0xFF3B82F6),
                     cardColor: card,
                     borderColor: border,
+                  ),
+                  _ProfileOptionTile(
+                    icon: Icons.archive_outlined,
+                    label: 'Archive',
+                    subtitle: 'Deleted, completed, and past items',
+                    accentColor: const Color(0xFF6366F1),
+                    cardColor: card,
+                    borderColor: border,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ArchivePage()),
+                    ),
                   ),
                   _ProfileOptionTile(
                     icon: Icons.notification_important_outlined,
