@@ -1845,6 +1845,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }) {
     final totalHours = endHour - startHour + 1;
     final gridHeight = totalHours * hourHeight;
+    final dayLayouts = <int, List<_TimedEventLayout>>{
+      for (int dayIndex = 0; dayIndex < 7; dayIndex++)
+        dayIndex: _buildTimedEventLayouts(
+          _getEventsForDate(days[dayIndex]),
+          startHour: startHour,
+          endHour: endHour,
+        ),
+    };
 
     const double lineOffset = 10; // MUST match the hour-line margin top
 
@@ -1915,39 +1923,31 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         // events — snapped to the visible grid lines
         for (int dayIndex = 0; dayIndex < 7; dayIndex++)
-          ..._getEventsForDate(days[dayIndex]).map((event) {
-            final start =
-                event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
-            final end = event.endTime ??
-                TimeOfDay(
-                  hour: math.min(start.hour + 1, endHour),
-                  minute: 0,
-                );
-
-            final totalMinutes = (endHour - startHour + 1) * 60;
-            final startMinutes =
-                (start.hour * 60 + start.minute) - (startHour * 60);
-            final endMinutes =
-                (end.hour * 60 + end.minute) - (startHour * 60);
-            final clampedStart = startMinutes.clamp(0, totalMinutes);
-            final clampedEnd = endMinutes.clamp(0, totalMinutes);
-            if (clampedEnd <= clampedStart) {
-              return const SizedBox.shrink();
-            }
-
-            final top = ((clampedStart / 60) * hourHeight) + lineOffset;
+          ...dayLayouts[dayIndex]!.map((layout) {
+            final top = ((layout.startMinutes / 60) * hourHeight) + lineOffset;
             final minHeight = hourHeight * 0.25;
-            final height =
-                math.max(minHeight, ((clampedEnd - clampedStart) / 60) * hourHeight);
-
-            final left = timeColWidth + (dayIndex * dayWidth);
+            final height = math.max(
+              minHeight,
+              ((layout.endMinutes - layout.startMinutes) / 60) * hourHeight,
+            );
+            const columnGap = 2.0;
+            final columnWidth = layout.columnCount > 1
+                ? (dayWidth - columnGap) / layout.columnCount
+                : dayWidth;
+            final left = layout.columnCount > 1
+                ? timeColWidth + (dayIndex * dayWidth) + layout.column * (columnWidth + columnGap)
+                : timeColWidth + (dayIndex * dayWidth);
 
             return Positioned(
               top: top,
               left: left,
-              width: dayWidth,
+              width: columnWidth,
               height: height,
-              child: _buildWeeklyEventBlock(event, start, end),
+              child: _buildWeeklyEventBlock(
+                layout.event,
+                layout.startTime,
+                layout.endTime,
+              ),
             );
           }),
       ],
@@ -2174,11 +2174,19 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     const hourHeight = 72.0;
     const lineOffset = 10.0;
     const minEventHeight = 68.0;
+    const timelineLeft = 76.0;
+    const timelineRight = 16.0;
     final totalHours = endHour - startHour + 1;
     final timelineHeight = totalHours * hourHeight;
 
     final now = DateTime.now();
     final totalMinutes = (endHour - startHour + 1) * 60;
+    final eventLayouts = _buildTimedEventLayouts(
+      events,
+      startHour: startHour,
+      endHour: endHour,
+      minimumDurationMinutes: 45,
+    );
     final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
     final showNowLine =
         isToday && nowMinutes >= 0 && nowMinutes <= totalMinutes && totalMinutes > 0;
@@ -2296,37 +2304,32 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                     ],
                   ),
                 ),
-              ...events.map((event) {
-                final start = event.startTime ?? const TimeOfDay(hour: startHour, minute: 0);
-                final end = event.endTime ??
-                    TimeOfDay(
-                      hour: math.min(start.hour + 1, endHour),
-                      minute: start.minute,
-                    );
-
-                final startMinutes = ((start.hour - startHour) * 60) + start.minute;
-                final endMinutes = ((end.hour - startHour) * 60) + end.minute;
-                final clampedStart = math.max(0, startMinutes);
-                final clampedEnd = math.max(
-                  clampedStart + 45,
-                  math.min(endMinutes, (endHour - startHour + 1) * 60),
-                );
-
-                final top = (clampedStart / 60) * hourHeight + lineOffset;
-                final height = ((clampedEnd - clampedStart) / 60) * hourHeight;
+              ...eventLayouts.map((layout) {
+                final top = (layout.startMinutes / 60) * hourHeight + lineOffset;
+                final height =
+                    ((layout.endMinutes - layout.startMinutes) / 60) * hourHeight;
                 final visualHeight = height < minEventHeight ? minEventHeight : height;
+                final availableWidth =
+                    MediaQuery.of(context).size.width - timelineLeft - timelineRight - 8;
+                const columnGap = 4.0;
+                final blockWidth = layout.columnCount > 1
+                    ? (availableWidth - columnGap) / layout.columnCount
+                    : availableWidth;
+                final blockLeft = layout.columnCount > 1
+                    ? timelineLeft + layout.column * (blockWidth + columnGap)
+                    : timelineLeft;
 
                 return Positioned(
                   top: top,
-                  left: 76,
-                  right: 16,
+                  left: blockLeft,
                   child: SizedBox(
+                    width: blockWidth,
                     height: visualHeight,
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: () => _showEditEventDialog(event),
+                        onTap: () => _showEditEventDialog(layout.event),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             final isCompact = constraints.maxHeight <= minEventHeight + 0.1;
@@ -2365,7 +2368,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                                                 borderRadius: BorderRadius.circular(10),
                                               ),
                                               child: Text(
-                                                event.title,
+                                                layout.event.title,
                                                 style: TextStyle(
                                                   color: Colors.blue[800],
                                                   fontWeight: FontWeight.w600,
@@ -2377,7 +2380,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                                           ),
                                           const SizedBox(width: 8),
                                           Icon(
-                                            _iconForEventType(event.type),
+                                            _iconForEventType(layout.event.type),
                                             size: 16,
                                             color: Colors.blue[700],
                                           ),
@@ -2390,7 +2393,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                                       child: Align(
                                         alignment: Alignment.centerLeft,
                                         child: Text(
-                                          event.category,
+                                          layout.event.category,
                                           style: TextStyle(
                                             color: Colors.blueGrey[900],
                                             fontWeight: FontWeight.w600,
@@ -2404,7 +2407,10 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                                     ),
                                     SizedBox(height: betweenCategoryAndTime),
                                     Text(
-                                      _formatEventTimeRange(start, end),
+                                      _formatEventTimeRange(
+                                        layout.startTime,
+                                        layout.endTime,
+                                      ),
                                       style: TextStyle(
                                         color: Colors.blueGrey[500],
                                         fontWeight: FontWeight.w500,
@@ -2427,6 +2433,77 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         ),
       ),
     );
+  }
+
+  List<_TimedEventLayout> _buildTimedEventLayouts(
+    List<Event> events, {
+    required int startHour,
+    required int endHour,
+    int minimumDurationMinutes = 0,
+  }) {
+    final totalMinutes = (endHour - startHour + 1) * 60;
+    final layouts = <_TimedEventLayout>[];
+
+    for (final event in events) {
+      final start = event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
+      final end = event.endTime ??
+          TimeOfDay(
+            hour: math.min(start.hour + 1, endHour),
+            minute: start.minute,
+          );
+
+      final startMinutes = ((start.hour - startHour) * 60) + start.minute;
+      final endMinutes = ((end.hour - startHour) * 60) + end.minute;
+      final clampedStart = math.max(0, startMinutes);
+      final clampedEnd = math.max(
+        clampedStart + minimumDurationMinutes,
+        math.min(endMinutes, totalMinutes),
+      );
+      if (clampedEnd <= clampedStart) {
+        continue;
+      }
+
+      layouts.add(
+        _TimedEventLayout(
+          event: event,
+          startTime: start,
+          endTime: end,
+          startMinutes: clampedStart,
+          endMinutes: clampedEnd,
+        ),
+      );
+    }
+
+    layouts.sort((a, b) {
+      final byStart = a.startMinutes.compareTo(b.startMinutes);
+      if (byStart != 0) return byStart;
+      final byEnd = a.endMinutes.compareTo(b.endMinutes);
+      if (byEnd != 0) return byEnd;
+      return a.event.title.compareTo(b.event.title);
+    });
+
+    final active = <_TimedEventLayout>[];
+
+    for (final layout in layouts) {
+      active.removeWhere((other) => other.endMinutes <= layout.startMinutes);
+
+      if (active.isNotEmpty) {
+        // This event overlaps with at least one active event — mark all as 2-column.
+        for (final other in active) {
+          other.columnCount = 2;
+        }
+        layout.columnCount = 2;
+
+        // Assign to column 0 if free, otherwise column 1.
+        // If 3+ events overlap simultaneously, extras go into column 1 (stacked).
+        final usedColumns = active.map((other) => other.column).toSet();
+        layout.column = usedColumns.contains(0) ? 1 : 0;
+      }
+
+      active.add(layout);
+    }
+
+    return layouts;
   }
 
   String _formatHourLabel(int hour) {
@@ -4023,6 +4100,24 @@ class _RoundedArrowButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TimedEventLayout {
+  _TimedEventLayout({
+    required this.event,
+    required this.startTime,
+    required this.endTime,
+    required this.startMinutes,
+    required this.endMinutes,
+  });
+
+  final Event event;
+  final TimeOfDay startTime;
+  final TimeOfDay endTime;
+  final int startMinutes;
+  final int endMinutes;
+  int column = 0;
+  int columnCount = 1;
 }
 
 class _TimeSlot {
