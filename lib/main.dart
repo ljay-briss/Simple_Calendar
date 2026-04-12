@@ -425,6 +425,7 @@ class Event {
   final List<String> completedDates;
   final int? estimatedMinutes;
   final List<String> subtasks;
+  final List<String> excludedDates;
 
   Event({
     required this.id,
@@ -441,6 +442,7 @@ class Event {
     this.completedDates = const [],
     this.estimatedMinutes,
     this.subtasks = const [],
+    this.excludedDates = const [],
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
@@ -462,6 +464,7 @@ class Event {
       'completedDates': completedDates,
       'estimatedMinutes': estimatedMinutes,
       'subtasks': subtasks,
+      'excludedDates': excludedDates,
     };
   }
 
@@ -506,6 +509,15 @@ class Event {
         }
       }
     }
+    final excludedDatesRaw = map['excludedDates'];
+    final excludedDates = <String>[];
+    if (excludedDatesRaw is List) {
+      for (final entry in excludedDatesRaw) {
+        if (entry is String && entry.trim().isNotEmpty) {
+          excludedDates.add(entry);
+        }
+      }
+    }
 
     return Event(
       id: id,
@@ -522,6 +534,7 @@ class Event {
       completedDates: completedDates,
       estimatedMinutes: estimatedMinutes,
       subtasks: subtasks,
+      excludedDates: excludedDates,
     );
   }
 
@@ -540,6 +553,7 @@ class Event {
     List<String>? completedDates,
     int? estimatedMinutes,
     List<String>? subtasks,
+    List<String>? excludedDates,
   }) {
     return Event(
       id: id ?? this.id,
@@ -556,6 +570,7 @@ class Event {
       completedDates: completedDates ?? List<String>.from(this.completedDates),
       estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
       subtasks: subtasks ?? this.subtasks,
+      excludedDates: excludedDates ?? List<String>.from(this.excludedDates),
     );
   }
 
@@ -2329,7 +2344,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: () => _showEditEventDialog(layout.event),
+                        onTap: () => _showEditEventDialog(layout.event, occurrenceDate: _selectedDate),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             final isCompact = constraints.maxHeight <= minEventHeight + 0.1;
@@ -2750,17 +2765,19 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
   }
 
 
-  Future<void> _showEditEventDialog(Event oldEvent) async {
+  Future<void> _showEditEventDialog(Event oldEvent, {DateTime? occurrenceDate}) async {
     final edited = await showDialog<List<Event>>(
       context: context,
       builder: (_) => EditEventDialog(
         initial: oldEvent,
         categories: _categories,
         onCategoriesChanged: _handleCategoriesUpdated,
+        occurrenceDate: occurrenceDate,
       ),
     );
     if (edited == null) return;
     if (edited.isEmpty) {
+      // Delete all occurrences
       final archiveEntry = ArchiveEntry.deletedEvent(oldEvent);
       setState(() {
         _events.removeWhere((event) => event.id == oldEvent.id);
@@ -3328,8 +3345,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
 
   return InkWell(
     borderRadius: BorderRadius.circular(20),
-    onTap: () => _showEditEventDialog(event),
-    onLongPress: () => _confirmDelete(event),
+    onTap: () => _showEditEventDialog(event, occurrenceDate: targetDate),
+    onLongPress: () => _confirmDelete(event, occurrenceDate: targetDate),
     child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -3637,6 +3654,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   }
 
   bool _occursOnDate(Event event, DateTime date) {
+    if (event.excludedDates.contains(_dateKey(date))) return false;
+
     final baseDate = DateTime(event.date.year, event.date.month, event.date.day);
     if (_isSameDay(baseDate, date)) {
       return true;
@@ -3879,42 +3898,104 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     );
   }
 
-  void _confirmDelete(Event event) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Event'),
-        content: Text('Are you sure you want to delete "${event.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final archiveEntry = ArchiveEntry.deletedEvent(event);
-              setState(() {
-                _events.removeWhere((entry) => entry.id == event.id);
-                if (!_hasArchiveEntry(archiveEntry)) {
-                  _archiveEntries.insert(0, archiveEntry);
-                }
-              });
-              unawaited(_persistEvents());
-              unawaited(_saveArchive());
-              unawaited(NotificationService.instance.cancelEventReminder(event));
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Event deleted')),
-              );
-            },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.redAccent),
+  void _confirmDelete(Event event, {DateTime? occurrenceDate}) {
+    final isRecurring = event.repeatFrequency != RepeatFrequency.none;
+
+    if (isRecurring && occurrenceDate != null) {
+      showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Event'),
+          content: Text('Delete "${event.title}" for this day only, or all repeats?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancel'),
             ),
-          ),
-        ],
-      ),
-    );
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('one'),
+              child: const Text(
+                'This occurrence',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('all'),
+              child: const Text(
+                'All occurrences',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ),
+      ).then((choice) {
+        if (choice == null || !mounted) return;
+        if (choice == 'one') {
+          final key = _dateKey(occurrenceDate);
+          final updated = event.copyWith(
+            excludedDates: [...event.excludedDates, key],
+          );
+          setState(() {
+            final i = _events.indexOf(event);
+            if (i != -1) _events[i] = updated;
+          });
+          unawaited(_persistEvents());
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Occurrence removed')),
+          );
+        } else {
+          final archiveEntry = ArchiveEntry.deletedEvent(event);
+          setState(() {
+            _events.removeWhere((entry) => entry.id == event.id);
+            if (!_hasArchiveEntry(archiveEntry)) {
+              _archiveEntries.insert(0, archiveEntry);
+            }
+          });
+          unawaited(_persistEvents());
+          unawaited(_saveArchive());
+          unawaited(NotificationService.instance.cancelEventReminder(event));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Event deleted')),
+          );
+        }
+      });
+    } else {
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Event'),
+          content: Text('Are you sure you want to delete "${event.title}"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final archiveEntry = ArchiveEntry.deletedEvent(event);
+                setState(() {
+                  _events.removeWhere((entry) => entry.id == event.id);
+                  if (!_hasArchiveEntry(archiveEntry)) {
+                    _archiveEntries.insert(0, archiveEntry);
+                  }
+                });
+                unawaited(_persistEvents());
+                unawaited(_saveArchive());
+                unawaited(NotificationService.instance.cancelEventReminder(event));
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Event deleted')),
+                );
+              },
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }
 
@@ -5200,11 +5281,13 @@ class EditEventDialog extends StatefulWidget {
     required this.initial,
     required this.categories,
     required this.onCategoriesChanged,
+    this.occurrenceDate,
     super.key,
   });
   final Event initial;
   final List<String> categories;
   final ValueChanged<List<String>> onCategoriesChanged;
+  final DateTime? occurrenceDate;
 
   @override
   State<EditEventDialog> createState() => _EditEventDialogState();
@@ -5484,28 +5567,77 @@ class _EditEventDialogState extends State<EditEventDialog> {
   }
 
   Future<void> _confirmDelete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Event'),
-        content: const Text('Delete this event and all of its repeats?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.redAccent),
+    final isRecurring = widget.initial.repeatFrequency != RepeatFrequency.none;
+    final occurrenceDate = widget.occurrenceDate;
+
+    if (isRecurring && occurrenceDate != null) {
+      // Recurring event: offer to delete just this occurrence or all
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Event'),
+          content: const Text('Do you want to delete just this occurrence or all repeats?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancel'),
             ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    Navigator.of(context).pop(<Event>[]);
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('one'),
+              child: const Text(
+                'This occurrence',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('all'),
+              child: const Text(
+                'All occurrences',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (choice == null) return;
+      if (!mounted) return;
+      if (choice == 'one') {
+        // Exclude just this date — return the updated event
+        final key = _dateKey(occurrenceDate);
+        final updated = widget.initial.copyWith(
+          excludedDates: [...widget.initial.excludedDates, key],
+        );
+        Navigator.of(context).pop(<Event>[updated]);
+      } else {
+        // Delete all occurrences
+        Navigator.of(context).pop(<Event>[]);
+      }
+    } else {
+      // Non-recurring: simple confirm
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Event'),
+          content: const Text('Are you sure you want to delete this event?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      if (!mounted) return;
+      Navigator.of(context).pop(<Event>[]);
+    }
   }
 
 
