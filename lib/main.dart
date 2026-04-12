@@ -2788,8 +2788,26 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
       unawaited(_persistEvents());
       unawaited(_saveArchive());
       unawaited(NotificationService.instance.cancelEventReminder(oldEvent));
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Event deleted')),
+        SnackBar(
+          content: const Text('Event deleted'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              if (!mounted) return;
+              setState(() {
+                _events.add(oldEvent);
+                _archiveEntries.removeWhere(
+                  (e) => e.id == archiveEntry.id && e.reason == archiveEntry.reason,
+                );
+              });
+              unawaited(_persistEvents());
+              unawaited(_saveArchive());
+              unawaited(NotificationService.instance.scheduleEventReminder(oldEvent));
+            },
+          ),
+        ),
       );
       return;
     }
@@ -3887,15 +3905,33 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     unawaited(_persistEvents());
 
     if (isCompleted) {
-      _addArchiveEntry(ArchiveEntry.completedTask(toggled, occurrenceDate));
+      final archiveEntry = ArchiveEntry.completedTask(toggled, occurrenceDate);
+      _addArchiveEntry(archiveEntry);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Task marked as completed!'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              if (!mounted) return;
+              setState(() {
+                final i = _events.indexWhere((e) => e.id == event.id);
+                if (i != -1) _events[i] = event;
+                _archiveEntries.removeWhere(
+                  (e) => _isSameArchiveEntry(e, archiveEntry),
+                );
+              });
+              unawaited(_persistEvents());
+              unawaited(_saveArchive());
+            },
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task marked as incomplete.')),
+      );
     }
-
-    final message = isCompleted
-        ? 'Task marked as completed!'
-        : 'Task marked as incomplete.';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
   }
 
   void _confirmDelete(Event event, {DateTime? occurrenceDate}) {
@@ -3941,7 +3977,20 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           });
           unawaited(_persistEvents());
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Occurrence removed')),
+            SnackBar(
+              content: const Text('Occurrence removed'),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () {
+                  if (!mounted) return;
+                  setState(() {
+                    final i = _events.indexWhere((e) => e.id == event.id);
+                    if (i != -1) _events[i] = event;
+                  });
+                  unawaited(_persistEvents());
+                },
+              ),
+            ),
           );
         } else {
           final archiveEntry = ArchiveEntry.deletedEvent(event);
@@ -3955,7 +4004,24 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           unawaited(_saveArchive());
           unawaited(NotificationService.instance.cancelEventReminder(event));
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Event deleted')),
+            SnackBar(
+              content: const Text('Event deleted'),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () {
+                  if (!mounted) return;
+                  setState(() {
+                    _events.add(event);
+                    _archiveEntries.removeWhere(
+                      (e) => e.id == archiveEntry.id && e.reason == archiveEntry.reason,
+                    );
+                  });
+                  unawaited(_persistEvents());
+                  unawaited(_saveArchive());
+                  unawaited(NotificationService.instance.scheduleEventReminder(event));
+                },
+              ),
+            ),
           );
         }
       });
@@ -3984,7 +4050,24 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 unawaited(NotificationService.instance.cancelEventReminder(event));
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Event deleted')),
+                  SnackBar(
+                    content: const Text('Event deleted'),
+                    action: SnackBarAction(
+                      label: 'Undo',
+                      onPressed: () {
+                        if (!mounted) return;
+                        setState(() {
+                          _events.add(event);
+                          _archiveEntries.removeWhere(
+                            (e) => e.id == archiveEntry.id && e.reason == archiveEntry.reason,
+                          );
+                        });
+                        unawaited(_persistEvents());
+                        unawaited(_saveArchive());
+                        unawaited(NotificationService.instance.scheduleEventReminder(event));
+                      },
+                    ),
+                  ),
                 );
               },
               child: const Text(
