@@ -95,6 +95,7 @@ const List<String> kCategoryOptions = <String>[
 
 const String kArchiveReasonDeleted = 'deleted';
 const String kArchiveReasonCompleted = 'completed';
+const String kArchiveReasonOccurrenceDeleted = 'occurrence_deleted';
 
 String _dateKey(DateTime date) {
   final normalized = DateTime(date.year, date.month, date.day);
@@ -879,6 +880,20 @@ class ArchiveEntry {
       reason: kArchiveReasonCompleted,
       archivedAt: DateTime.now(),
       date: occurrenceDate,
+    );
+  }
+
+  factory ArchiveEntry.deletedOccurrence(Event event, DateTime occurrenceDate) {
+    return ArchiveEntry(
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      category: event.category,
+      type: event.type.name,
+      reason: kArchiveReasonOccurrenceDeleted,
+      archivedAt: DateTime.now(),
+      date: occurrenceDate,
+      payload: event.toMap(),
     );
   }
 }
@@ -2811,6 +2826,29 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
       );
       return;
     }
+    // Detect single-occurrence delete from the edit dialog (excludedDates grew by one).
+    if (edited.length == 1 && edited.first.id == oldEvent.id) {
+      final newExclusions = Set<String>.from(edited.first.excludedDates)
+          .difference(Set<String>.from(oldEvent.excludedDates));
+      if (newExclusions.length == 1) {
+        final occurrenceDate = DateTime.parse(newExclusions.first);
+        final archiveEntry = ArchiveEntry.deletedOccurrence(oldEvent, occurrenceDate);
+        setState(() {
+          final i = _events.indexOf(oldEvent);
+          if (i != -1) _events[i] = edited.first;
+          if (!_hasArchiveEntry(archiveEntry)) {
+            _archiveEntries.insert(0, archiveEntry);
+          }
+        });
+        unawaited(_persistEvents());
+        unawaited(_saveArchive());
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Occurrence removed')),
+        );
+        return;
+      }
+    }
     setState(() {
       final i = _events.indexOf(oldEvent);
       if (i != -1) {
@@ -2884,14 +2922,16 @@ Widget _buildCompactCalendarHeader() {
           _buildIconButton(Icons.search, _showEventSearch),
           const SizedBox(width: 8),
           _buildIconButton(Icons.person_outline, () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProfilePage(
-                  currentLocale: widget.currentLocale,
-                  onLocaleChanged: widget.onLocaleChanged,
-                ),
-              ),
-            );
+            Navigator.of(context)
+                .push(
+                  MaterialPageRoute(
+                    builder: (_) => ProfilePage(
+                      currentLocale: widget.currentLocale,
+                      onLocaleChanged: widget.onLocaleChanged,
+                    ),
+                  ),
+                )
+                .then((_) => _loadPersistedState());
           }),
         ],
       ),
@@ -3971,11 +4011,16 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           final updated = event.copyWith(
             excludedDates: [...event.excludedDates, key],
           );
+          final archiveEntry = ArchiveEntry.deletedOccurrence(event, occurrenceDate);
           setState(() {
             final i = _events.indexOf(event);
             if (i != -1) _events[i] = updated;
+            if (!_hasArchiveEntry(archiveEntry)) {
+              _archiveEntries.insert(0, archiveEntry);
+            }
           });
           unawaited(_persistEvents());
+          unawaited(_saveArchive());
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text('Occurrence removed'),
@@ -3986,8 +4031,12 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                   setState(() {
                     final i = _events.indexWhere((e) => e.id == event.id);
                     if (i != -1) _events[i] = event;
+                    _archiveEntries.removeWhere(
+                      (e) => _isSameArchiveEntry(e, archiveEntry),
+                    );
                   });
                   unawaited(_persistEvents());
+                  unawaited(_saveArchive());
                 },
               ),
             ),
@@ -8238,6 +8287,32 @@ class _ArchivePageState extends State<ArchivePage> {
     _showArchiveMessage('Task marked as incomplete.');
   }
 
+  Future<void> _restoreOccurrenceEntry(ArchiveEntry entry) async {
+    if (entry.date == null) {
+      _showArchiveMessage('Missing occurrence date for this item.');
+      return;
+    }
+    final index = _events.indexWhere((event) => event.id == entry.id);
+    if (index == -1) {
+      _showArchiveMessage('Original recurring event not found.');
+      return;
+    }
+    final event = _events[index];
+    final key = _dateKey(entry.date!);
+    if (event.excludedDates.contains(key)) {
+      final updated = event.copyWith(
+        excludedDates: event.excludedDates.where((d) => d != key).toList(),
+      );
+      setState(() {
+        _events[index] = updated;
+      });
+      await _saveEvents();
+    }
+    _removeArchiveEntry(entry);
+    await _saveArchiveEntries();
+    _showArchiveMessage('Occurrence restored.');
+  }
+
   @override
   Widget build(BuildContext context) {
     final background = const Color(0xFFF0F3F7);
@@ -8247,7 +8322,9 @@ class _ArchivePageState extends State<ArchivePage> {
     final todayDate = DateTime(today.year, today.month, today.day);
 
     final deleted = _archiveEntries
-        .where((entry) => entry.reason == kArchiveReasonDeleted)
+        .where((entry) =>
+            entry.reason == kArchiveReasonDeleted ||
+            entry.reason == kArchiveReasonOccurrenceDeleted)
         .toList()
       ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
 
@@ -8295,10 +8372,18 @@ class _ArchivePageState extends State<ArchivePage> {
                         border: border,
                         icon: _iconForArchiveEntry(entry),
                         title: _titleForArchiveEntry(entry),
-                        subtitle: _subtitleForArchiveEntry(entry, 'Deleted'),
+                        subtitle: _subtitleForArchiveEntry(
+                          entry,
+                          entry.reason == kArchiveReasonOccurrenceDeleted
+                              ? 'Occurrence Deleted'
+                              : 'Deleted',
+                        ),
                         trailing: _buildArchiveAction(
                           label: 'Restore',
-                          onTap: () => _restoreDeletedEntry(entry),
+                          onTap: () =>
+                              entry.reason == kArchiveReasonOccurrenceDeleted
+                                  ? _restoreOccurrenceEntry(entry)
+                                  : _restoreDeletedEntry(entry),
                         ),
                       ),
                     ),
