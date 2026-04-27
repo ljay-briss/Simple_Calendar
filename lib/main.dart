@@ -14,6 +14,7 @@ import 'app_localizations.dart';
 
 part 'note_editor_page.dart';
 part 'notes_folder_page.dart';
+part 'smart_task_dialog.dart';
 
 // Core data definitions shared across the calendar, tasks, and notes views.
 enum EventType { event, task, note, timeOff }
@@ -52,6 +53,9 @@ extension RepeatFrequencyExtension on RepeatFrequency {
     }
   }
 }
+
+// Schedule distribution type for smart split tasks.
+enum WorkScheduleType { evenDays, timesPerWeek, everyday, custom }
 
 // Tabs shown in the bottom navigation bar.
 enum HomeTab { calendar, notes, daily }
@@ -427,6 +431,15 @@ class Event {
   final int? estimatedMinutes;
   final List<String> subtasks;
   final List<String> excludedDates;
+  final bool isPinned;
+  final bool isImportant;
+  // Smart-split task fields
+  final bool isSmartTask;          // true on the parent task
+  final String? parentTaskId;      // non-null on work-session events
+  final String? workScheduleType;  // WorkScheduleType.name stored as string
+  final int? workDaysCount;        // N for evenDays / K for timesPerWeek
+  final int? sessionAdjustedMinutes; // carry-forward adjusted duration
+  final bool isSessionRolledOver;  // missed session already forwarded
 
   Event({
     required this.id,
@@ -444,6 +457,14 @@ class Event {
     this.estimatedMinutes,
     this.subtasks = const [],
     this.excludedDates = const [],
+    this.isPinned = false,
+    this.isImportant = false,
+    this.isSmartTask = false,
+    this.parentTaskId,
+    this.workScheduleType,
+    this.workDaysCount,
+    this.sessionAdjustedMinutes,
+    this.isSessionRolledOver = false,
   });
 
   bool get hasTimeRange => startTime != null && endTime != null;
@@ -466,6 +487,14 @@ class Event {
       'estimatedMinutes': estimatedMinutes,
       'subtasks': subtasks,
       'excludedDates': excludedDates,
+      'isPinned': isPinned,
+      'isImportant': isImportant,
+      'isSmartTask': isSmartTask,
+      'parentTaskId': parentTaskId,
+      'workScheduleType': workScheduleType,
+      'workDaysCount': workDaysCount,
+      'sessionAdjustedMinutes': sessionAdjustedMinutes,
+      'isSessionRolledOver': isSessionRolledOver,
     };
   }
 
@@ -520,6 +549,11 @@ class Event {
       }
     }
 
+    final isPinnedValue = map['isPinned'];
+    final isImportantValue = map['isImportant'];
+    final isSmartTaskValue = map['isSmartTask'];
+    final isSessionRolledOverValue = map['isSessionRolledOver'];
+
     return Event(
       id: id,
       title: (map['title'] as String?) ?? '',
@@ -536,6 +570,14 @@ class Event {
       estimatedMinutes: estimatedMinutes,
       subtasks: subtasks,
       excludedDates: excludedDates,
+      isPinned: isPinnedValue is bool ? isPinnedValue : _boolFromAny(isPinnedValue),
+      isImportant: isImportantValue is bool ? isImportantValue : _boolFromAny(isImportantValue),
+      isSmartTask: isSmartTaskValue is bool ? isSmartTaskValue : _boolFromAny(isSmartTaskValue),
+      parentTaskId: map['parentTaskId'] as String?,
+      workScheduleType: map['workScheduleType'] as String?,
+      workDaysCount: map['workDaysCount'] is num ? (map['workDaysCount'] as num).toInt() : null,
+      sessionAdjustedMinutes: map['sessionAdjustedMinutes'] is num ? (map['sessionAdjustedMinutes'] as num).toInt() : null,
+      isSessionRolledOver: isSessionRolledOverValue is bool ? isSessionRolledOverValue : _boolFromAny(isSessionRolledOverValue),
     );
   }
 
@@ -555,6 +597,14 @@ class Event {
     int? estimatedMinutes,
     List<String>? subtasks,
     List<String>? excludedDates,
+    bool? isPinned,
+    bool? isImportant,
+    bool? isSmartTask,
+    String? parentTaskId,
+    String? workScheduleType,
+    int? workDaysCount,
+    int? sessionAdjustedMinutes,
+    bool? isSessionRolledOver,
   }) {
     return Event(
       id: id ?? this.id,
@@ -572,6 +622,14 @@ class Event {
       estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
       subtasks: subtasks ?? this.subtasks,
       excludedDates: excludedDates ?? List<String>.from(this.excludedDates),
+      isPinned: isPinned ?? this.isPinned,
+      isImportant: isImportant ?? this.isImportant,
+      isSmartTask: isSmartTask ?? this.isSmartTask,
+      parentTaskId: parentTaskId ?? this.parentTaskId,
+      workScheduleType: workScheduleType ?? this.workScheduleType,
+      workDaysCount: workDaysCount ?? this.workDaysCount,
+      sessionAdjustedMinutes: sessionAdjustedMinutes ?? this.sessionAdjustedMinutes,
+      isSessionRolledOver: isSessionRolledOver ?? this.isSessionRolledOver,
     );
   }
 
@@ -924,6 +982,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<String> _categories = List<String>.from(kCategoryOptions);
   List<String> _pinnedNoteCategories = [];
   bool _showIntroCard = true;
+  TimeOfDay _dayStartTime = const TimeOfDay(hour: 8, minute: 0);
+  TimeOfDay _dayEndTime = const TimeOfDay(hour: 20, minute: 0);
   HomeTab _currentTab = HomeTab.calendar;
   _ScheduleView _currentScheduleView = _ScheduleView.daily;
   _WeeklyTab _currentWeeklyTab = _WeeklyTab.schedule;
@@ -937,10 +997,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   static const String _pinnedNoteCategoriesStorageKey =
       'calendar_notes_pinned_categories';
   static const String _archiveStorageKey = 'calendar_archive';
+  static const String _dayStartTimeKey = 'day_start_time';
+  static const String _dayEndTimeKey = 'day_end_time';
 
-  // Hours that bound the daily/weekly time grid views.
-  static const int _dayStartHour = 8;
-  static const int _dayEndHour = 20;
+  // Hours that bound the daily/weekly time grid views (backed by persisted settings).
+  int get _dayStartHour => _dayStartTime.hour;
+  int get _dayEndHour => _dayEndTime.hour;
 
   @override
   void initState() {
@@ -1004,6 +1066,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
         prefs.getStringList(_pinnedNoteCategoriesStorageKey) ?? [];
     final showIntroPref = prefs.getBool(_introCardStorageKey);
 
+    // Load persisted day-start / day-end times.
+    TimeOfDay? loadedDayStart;
+    TimeOfDay? loadedDayEnd;
+    final rawStart = prefs.getString(_dayStartTimeKey);
+    final rawEnd = prefs.getString(_dayEndTimeKey);
+    if (rawStart != null) loadedDayStart = _parseStoredTime(rawStart);
+    if (rawEnd != null) loadedDayEnd = _parseStoredTime(rawEnd);
+
     if (!mounted) return;
     setState(() {
       _events
@@ -1021,9 +1091,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _pinnedNoteCategories =
           _normalizePinnedCategories(storedPinnedCategories);
       _showIntroCard = showIntroPref ?? _events.isEmpty;
+      if (loadedDayStart != null) _dayStartTime = loadedDayStart;
+      if (loadedDayEnd != null) _dayEndTime = loadedDayEnd;
     });
     unawaited(_persistEvents());
     unawaited(NotificationService.instance.rescheduleAll(_events));
+    _applyCarryForward();
+  }
+
+  static String _encodeStoredTime(TimeOfDay t) => '${t.hour}:${t.minute}';
+  static TimeOfDay _parseStoredTime(String s) {
+    final parts = s.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts[0]) ?? 8,
+      minute: int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0,
+    );
+  }
+
+  Future<void> _persistDayTimes() async {
+    final prefs = await _getPrefs();
+    await prefs.setString(_dayStartTimeKey, _encodeStoredTime(_dayStartTime));
+    await prefs.setString(_dayEndTimeKey, _encodeStoredTime(_dayEndTime));
   }
 
   // Write the current events list back to disk after creation/edits.
@@ -1327,6 +1415,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildDailyBody(List<Event> eventsForSelectedDate) {
     final sortedEvents = List<Event>.from(eventsForSelectedDate)
       ..sort((a, b) {
+        // Important first, then pinned, then by start time
+        if (a.isImportant != b.isImportant) return a.isImportant ? -1 : 1;
+        if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
         final aStart = a.startTime ?? const TimeOfDay(hour: 0, minute: 0);
         final bStart = b.startTime ?? const TimeOfDay(hour: 0, minute: 0);
         final hourComparison = aStart.hour.compareTo(bStart.hour);
@@ -1673,7 +1764,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final weekEnd = weekDays.last;
 
     final eventsByDay = weekDays
-        .map((day) => MapEntry(day, _getEventsForDate(day)))
+        .map((day) {
+          final dayEvents = List<Event>.from(_getEventsForDate(day))
+            ..sort((a, b) {
+              if (a.isImportant != b.isImportant) return a.isImportant ? -1 : 1;
+              if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+              final aStart = a.startTime ?? const TimeOfDay(hour: 0, minute: 0);
+              final bStart = b.startTime ?? const TimeOfDay(hour: 0, minute: 0);
+              final hourComparison = aStart.hour.compareTo(bStart.hour);
+              if (hourComparison != 0) return hourComparison;
+              return aStart.minute.compareTo(bStart.minute);
+            });
+          return MapEntry(day, dayEvents);
+        })
         .where((entry) => entry.value.isNotEmpty)
         .toList();
 
@@ -2928,6 +3031,15 @@ Widget _buildCompactCalendarHeader() {
                     builder: (_) => ProfilePage(
                       currentLocale: widget.currentLocale,
                       onLocaleChanged: widget.onLocaleChanged,
+                      dayStartTime: _dayStartTime,
+                      dayEndTime: _dayEndTime,
+                      onDayTimesChanged: (start, end) {
+                        setState(() {
+                          _dayStartTime = start;
+                          _dayEndTime = end;
+                        });
+                        unawaited(_persistDayTimes());
+                      },
                     ),
                   ),
                 )
@@ -3252,16 +3364,26 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
   Widget _buildDateOverview(List<Event> events) {
     final selectedDateLabel =
         DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
+    final sorted = List<Event>.from(events)
+      ..sort((a, b) {
+        if (a.isImportant != b.isImportant) return a.isImportant ? -1 : 1;
+        if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+        final aStart = a.startTime ?? const TimeOfDay(hour: 0, minute: 0);
+        final bStart = b.startTime ?? const TimeOfDay(hour: 0, minute: 0);
+        final hourComparison = aStart.hour.compareTo(bStart.hour);
+        if (hourComparison != 0) return hourComparison;
+        return aStart.minute.compareTo(bStart.minute);
+      });
     return _OverviewSection(
       title: selectedDateLabel,
       onShare: _shareDaySchedule,
-      child: events.isEmpty
+      child: sorted.isEmpty
           ? const _EmptyOverviewMessage(
               message: 'No tasks yet. Tap + to add your first one!',
             )
           : Column(
               children: [
-                for (final event in events)
+                for (final event in sorted)
                   _buildEventTile(event, occurrenceDate: _selectedDate),
               ],
             ),
@@ -3328,6 +3450,18 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
 Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   final targetDate = occurrenceDate ?? _selectedDate;
   final categoryColor = _getCategoryColor(event.category);
+
+  final isSession = event.parentTaskId != null;
+  final isSmartParent = event.isSmartTask;
+
+  // For sessions show effective duration (carry-forward adjusted).
+  final effectiveMinutes =
+      event.sessionAdjustedMinutes ?? event.estimatedMinutes;
+  final wasCarriedForward = isSession &&
+      event.sessionAdjustedMinutes != null &&
+      event.estimatedMinutes != null &&
+      event.sessionAdjustedMinutes! > event.estimatedMinutes!;
+
   final timeLabel = event.hasTimeRange
       ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
       : 'All day';
@@ -3371,10 +3505,33 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     decoration: isCompleted ? TextDecoration.lineThrough : null,
   );
 
+  final isPinned = event.isPinned;
+  final isImportant = event.isImportant;
+
   final chips = <Widget>[
-    _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+    // Session tiles show work-session badge instead of generic type
+    if (isSession) ...[
+      _buildInfoChip(Icons.timer_outlined,
+          effectiveMinutes != null
+              ? _formatDuration(Duration(minutes: effectiveMinutes))
+              : 'Session',
+          background: const Color(0xFFEDE7FF)),
+      if (wasCarriedForward)
+        _buildInfoChip(Icons.redo_rounded, 'Carried forward',
+            background: const Color(0xFFFFF3CD)),
+    ] else ...[
+      _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+    ],
     _buildInfoChip(Icons.folder_outlined, event.category,
         background: const Color(0xFFF1F4FF)),
+    if (isSmartParent) ...[
+      _buildInfoChip(Icons.auto_awesome_outlined, 'Smart task',
+          background: const Color(0xFFEDE7FF)),
+      if (event.estimatedMinutes != null)
+        _buildInfoChip(Icons.hourglass_bottom_outlined,
+            _formatDuration(Duration(minutes: event.estimatedMinutes!)),
+            background: const Color(0xFFF1F4FF)),
+    ],
     if (event.reminder != null)
       _buildInfoChip(
         Icons.notifications_active_outlined,
@@ -3393,6 +3550,18 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         'Completed',
         background: const Color(0xFFE7F8F2),
       ),
+    if (isImportant)
+      _buildInfoChip(
+        Icons.priority_high_rounded,
+        'Important',
+        background: const Color(0xFFFFF3CD),
+      ),
+    if (isPinned)
+      _buildInfoChip(
+        Icons.push_pin,
+        'Pinned',
+        background: const Color(0xFFF1F4FF),
+      ),
   ];
 
   final iconColor = isCompleted
@@ -3400,6 +3569,16 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       : isNote
           ? Colors.amber[700]
           : Colors.blueGrey[300];
+
+  // Tile background / border change for important events
+  final tileColor = isCompleted
+      ? const Color(0xFFF8FAFD)
+      : isImportant
+          ? const Color(0xFFFFFBF0)
+          : Colors.white;
+  final tileBorder = isImportant
+      ? Border.all(color: Colors.amber[600]!, width: 1.5)
+      : Border.all(color: Colors.blueGrey[50]!);
 
   return InkWell(
     borderRadius: BorderRadius.circular(20),
@@ -3410,8 +3589,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.blueGrey[50]!),
-        color: isCompleted ? const Color(0xFFF8FAFD) : Colors.white,
+        border: tileBorder,
+        color: tileColor,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -3423,7 +3602,7 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // HEADER: dot + title + time
+          // HEADER: dot + title + time + pin/important badges
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3446,6 +3625,14 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                   ],
                 ),
               ),
+              if (isImportant) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.priority_high_rounded, size: 18, color: Colors.amber[700]),
+              ],
+              if (isPinned) ...[
+                const SizedBox(width: 4),
+                Icon(Icons.push_pin, size: 16, color: Colors.blueGrey[400]),
+              ],
             ],
           ),
 
@@ -3465,7 +3652,7 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           ],
 
           // TASK TOGGLE under description
-          if (isTask) ...[
+          if (isTask && !isSmartParent) ...[
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -3482,7 +3669,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isCompleted ? 'Completed' : 'Mark as complete',
+                    isCompleted
+                        ? (isSession ? 'Session done' : 'Completed')
+                        : (isSession ? 'Mark session done' : 'Mark as complete'),
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 14,
@@ -3634,16 +3823,63 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   }
 
   void _handleAddTap() {
-    switch (_currentTab) {      
-      
+    switch (_currentTab) {
       case HomeTab.calendar:
       case HomeTab.daily:
-        _showAddEventDialog();
+        _showAddTypeSheet();
         break;
       case HomeTab.notes:
         _showAddNoteDialog();
-        break;    
+        break;
     }
+  }
+
+  void _showAddTypeSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE9F2FF),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: Colors.blueGrey[200],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            _AddTypeRow(
+              icon: Icons.event_outlined,
+              label: 'Event / Simple Task',
+              subtitle: 'Calendar event, time off, or basic task',
+              onTap: () {
+                Navigator.pop(context);
+                _showAddEventDialog();
+              },
+            ),
+            const SizedBox(height: 8),
+            _AddTypeRow(
+              icon: Icons.auto_awesome_outlined,
+              label: 'Smart Task',
+              subtitle: 'Auto-splits work across days with scheduling',
+              color: Colors.deepPurple,
+              onTap: () {
+                Navigator.pop(context);
+                _showAddSmartTaskDialog();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _shareDaySchedule() {
@@ -3705,9 +3941,6 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
 
   bool _isTaskHiddenFromCalendar(Event event, DateTime targetDate) {
     if (event.type != EventType.task) return false;
-    if (event.repeatFrequency != RepeatFrequency.none) {
-      return event.completedDates.isNotEmpty;
-    }
     return event.isCompletedOn(targetDate);
   }
 
@@ -3927,6 +4160,298 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       }
     }
   }
+
+  // ── Smart task helpers ────────────────────────────────────────────────────
+
+  Future<void> _showAddSmartTaskDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AddSmartTaskDialog(
+        selectedDate: _selectedDate,
+        categories: _categories,
+        existingEvents: List.unmodifiable(_events),
+        dayStartHour: _dayStartHour,
+        dayEndHour: _dayEndHour,
+        onTaskCreated: (parent, sessions) {
+          _addSmartTaskWithSessions(parent, sessions);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Task "${parent.title}" scheduled across ${sessions.length} session${sessions.length == 1 ? '' : 's'}.'),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  void _addSmartTaskWithSessions(Event parent, List<Event> sessions) {
+    setState(() {
+      _events.add(parent);
+      _events.addAll(sessions);
+    });
+    unawaited(_persistEvents());
+  }
+
+  /// Apply carry-forward: for any session that was missed (before today,
+  /// incomplete, not yet rolled over), add its time to the next session.
+  void _applyCarryForward() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    bool changed = false;
+
+    final missed = _events.where((e) =>
+      e.parentTaskId != null &&
+      !e.isSessionRolledOver &&
+      !e.isCompleted &&
+      DateTime(e.date.year, e.date.month, e.date.day).isBefore(today),
+    ).toList();
+
+    for (final missedSession in missed) {
+      // Find earliest upcoming session for the same parent.
+      final candidates = _events.where((e) =>
+        e.parentTaskId == missedSession.parentTaskId &&
+        e.id != missedSession.id &&
+        !e.isSessionRolledOver &&
+        !DateTime(e.date.year, e.date.month, e.date.day).isBefore(today),
+      ).toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
+
+      if (candidates.isEmpty) continue;
+      final next = candidates.first;
+
+      final missedMins = missedSession.sessionAdjustedMinutes
+          ?? missedSession.estimatedMinutes ?? 0;
+      final nextMins = next.sessionAdjustedMinutes
+          ?? next.estimatedMinutes ?? 0;
+      final newAdjusted = nextMins + missedMins;
+
+      // Extend the end time of the next session by the rolled-over minutes.
+      TimeOfDay? newEnd = next.endTime;
+      if (next.startTime != null) {
+        final totalMin = next.startTime!.hour * 60 +
+            next.startTime!.minute + newAdjusted;
+        newEnd = TimeOfDay(
+          hour: (totalMin ~/ 60).clamp(0, 23),
+          minute: totalMin % 60,
+        );
+      }
+
+      final missedIdx = _events.indexWhere((e) => e.id == missedSession.id);
+      final nextIdx = _events.indexWhere((e) => e.id == next.id);
+      if (missedIdx != -1 && nextIdx != -1) {
+        _events[missedIdx] = missedSession.copyWith(isSessionRolledOver: true);
+        _events[nextIdx] = next.copyWith(
+          sessionAdjustedMinutes: newAdjusted,
+          endTime: newEnd,
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setState(() {});
+      unawaited(_persistEvents());
+    }
+  }
+
+  /// Pick [n] dates from [days] at as-even-as-possible intervals.
+  static List<DateTime> _pickEvenIntervalDays(List<DateTime> days, int n) {
+    if (n <= 0) return [];
+    if (n >= days.length) return List.from(days);
+    if (n == 1) return [days[0]];
+    final result = <DateTime>[];
+    final step = (days.length - 1) / (n - 1);
+    for (int i = 0; i < n; i++) {
+      result.add(days[(i * step).round()]);
+    }
+    return result;
+  }
+
+  /// Pick up to [k] earliest days per ISO week from [days].
+  static List<DateTime> _pickTimesPerWeekDays(List<DateTime> days, int k) {
+    final weekMap = <String, List<DateTime>>{};
+    for (final day in days) {
+      final monday = day.subtract(Duration(days: day.weekday - 1));
+      final key = '${monday.year}_${monday.month}_${monday.day}';
+      weekMap.putIfAbsent(key, () => []).add(day);
+    }
+    final result = <DateTime>[];
+    for (final weekDays in weekMap.values) {
+      weekDays.sort();
+      result.addAll(weekDays.take(k.clamp(1, weekDays.length)));
+    }
+    result.sort();
+    return result;
+  }
+
+  /// Find the earliest time slot on [day] that fits [neededMinutes],
+  /// honouring a 30-min buffer around existing events.
+  /// Returns null when there is no free slot within the day window.
+  TimeOfDay? _findEarliestSlotForSession(
+      DateTime day, List<Event> existingEvents, int neededMinutes) {
+    final dayStart =
+        DateTime(day.year, day.month, day.day, _dayStartHour);
+    final dayEnd =
+        DateTime(day.year, day.month, day.day, _dayEndHour);
+    const bufferMin = 30;
+
+    final timed = existingEvents
+        .where((e) => e.hasTimeRange)
+        .map((e) => _TimeSlot(
+              start: _dateWithTime(day, e.startTime!),
+              end: _dateWithTime(day, e.endTime!),
+            ))
+        .where((s) => s.end.isAfter(s.start))
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+
+    // Merge overlapping/adjacent blocked slots.
+    final merged = <_TimeSlot>[];
+    for (final slot in timed) {
+      if (merged.isEmpty || slot.start.isAfter(merged.last.end)) {
+        merged.add(slot);
+      } else {
+        merged[merged.length - 1] = _TimeSlot(
+          start: merged.last.start,
+          end: slot.end.isAfter(merged.last.end) ? slot.end : merged.last.end,
+        );
+      }
+    }
+
+    var cursor = dayStart;
+    for (final blocked in merged) {
+      final gapEnd =
+          blocked.start.subtract(const Duration(minutes: bufferMin));
+      if (gapEnd.isAfter(cursor) &&
+          gapEnd.difference(cursor).inMinutes >= neededMinutes) {
+        return TimeOfDay(hour: cursor.hour, minute: cursor.minute);
+      }
+      final nextFree =
+          blocked.end.add(const Duration(minutes: bufferMin));
+      if (nextFree.isAfter(cursor)) cursor = nextFree;
+    }
+
+    if (cursor.isBefore(dayEnd) &&
+        dayEnd.difference(cursor).inMinutes >= neededMinutes) {
+      return TimeOfDay(hour: cursor.hour, minute: cursor.minute);
+    }
+    return null;
+  }
+
+  /// Generate work-session [Event]s for a smart task [parent].
+  List<Event> generateSmartSessions({
+    required Event parent,
+    required WorkScheduleType scheduleType,
+    required int workDaysCount,
+    List<DateTime> customDays = const [],
+    Map<int, int> customDurations = const {},
+  }) {
+    final totalMinutes = parent.estimatedMinutes ?? 60;
+    final dueDate =
+        DateTime(parent.date.year, parent.date.month, parent.date.day);
+
+    final now = DateTime.now();
+    final todayNorm = DateTime(now.year, now.month, now.day);
+    final twoWeeksBefore = dueDate.subtract(const Duration(days: 14));
+    final startDate =
+        todayNorm.isAfter(twoWeeksBefore) ? todayNorm : twoWeeksBefore;
+
+    final availableDays = <DateTime>[];
+    var cursor = startDate;
+    while (!cursor.isAfter(dueDate)) {
+      availableDays.add(cursor);
+      cursor = cursor.add(const Duration(days: 1));
+    }
+    if (availableDays.isEmpty) return [];
+
+    List<DateTime> selectedDays;
+    List<int> perDayMinutes;
+
+    switch (scheduleType) {
+      case WorkScheduleType.evenDays:
+        final n = workDaysCount.clamp(1, availableDays.length);
+        selectedDays = _pickEvenIntervalDays(availableDays, n);
+        final mins = (totalMinutes / selectedDays.length).ceil();
+        perDayMinutes = List.filled(selectedDays.length, mins);
+        break;
+
+      case WorkScheduleType.timesPerWeek:
+        selectedDays =
+            _pickTimesPerWeekDays(availableDays, workDaysCount.clamp(1, 7));
+        final mins = selectedDays.isNotEmpty
+            ? (totalMinutes / selectedDays.length).ceil()
+            : totalMinutes;
+        perDayMinutes = List.filled(selectedDays.length, mins);
+        break;
+
+      case WorkScheduleType.everyday:
+        const minMinutes = 30;
+        final sessionsNeeded = (totalMinutes / minMinutes).ceil();
+        final n = sessionsNeeded.clamp(1, availableDays.length);
+        selectedDays = availableDays.take(n).toList();
+        final mins =
+            (totalMinutes / selectedDays.length).ceil().clamp(minMinutes, totalMinutes);
+        perDayMinutes = List.filled(selectedDays.length, mins);
+        break;
+
+      case WorkScheduleType.custom:
+        selectedDays = customDays;
+        perDayMinutes = List.generate(
+            customDays.length, (i) => customDurations[i] ?? 30);
+        break;
+    }
+
+    final sessions = <Event>[];
+    // Track sessions already placed so they count as blocked time.
+    final scheduledByDay = <String, List<Event>>{};
+
+    for (int i = 0; i < selectedDays.length; i++) {
+      final day = selectedDays[i];
+      final mins = perDayMinutes[i];
+      final dayKey = _dateKey(day);
+
+      final dayExisting = _events
+          .where((e) =>
+              e.parentTaskId == null &&
+              e.type != EventType.note &&
+              _occursOnDate(e, day))
+          .toList();
+      final alreadyPlaced = scheduledByDay[dayKey] ?? [];
+
+      final slotStart = _findEarliestSlotForSession(
+          day, [...dayExisting, ...alreadyPlaced], mins);
+
+      final startTOD =
+          slotStart ?? TimeOfDay(hour: _dayStartHour, minute: 0);
+      final endMin = startTOD.hour * 60 + startTOD.minute + mins;
+      final endTOD = TimeOfDay(
+          hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+
+      final session = Event(
+        id: _newEventId(),
+        title: parent.title,
+        description: '',
+        date: day,
+        startTime: startTOD,
+        endTime: endTOD,
+        category: parent.category,
+        type: EventType.task,
+        isPinned: parent.isPinned,
+        isImportant: parent.isImportant,
+        parentTaskId: parent.id,
+        estimatedMinutes: mins,
+        workScheduleType: parent.workScheduleType,
+      );
+      sessions.add(session);
+      scheduledByDay.putIfAbsent(dayKey, () => []).add(session);
+    }
+    return sessions;
+  }
+
+  // ── End smart task helpers ────────────────────────────────────────────────
 
   void _toggleTaskCompletion(Event event, DateTime occurrenceDate) {
     if (event.type != EventType.task) {
@@ -4690,6 +5215,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
   bool _isAllDay = true;
+  bool _isPinned = false;
+  bool _isImportant = false;
   late List<String> _categories;
   final List<DateTime> _selectedDates = [];
   late DateTime _lastPickedDate;
@@ -4879,6 +5406,25 @@ class _AddEventDialogState extends State<AddEventDialog> {
                               icon: Icons.notes_outlined,
                               alignLabelWithHint: true,
                             ),
+                          ),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Options'),
+                          const SizedBox(height: 4),
+                          SwitchListTile(
+                            value: _isPinned,
+                            onChanged: (v) => setState(() => _isPinned = v),
+                            title: const Text('Pin', style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Move to top of the list'),
+                            secondary: Icon(Icons.push_pin, color: Colors.blueGrey[500]),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          SwitchListTile(
+                            value: _isImportant,
+                            onChanged: (v) => setState(() => _isImportant = v),
+                            title: const Text('Important', style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Highlight and prioritise this item'),
+                            secondary: Icon(Icons.priority_high_rounded, color: Colors.amber[700]),
+                            contentPadding: EdgeInsets.zero,
                           ),
                         ],
                       ),
@@ -5380,6 +5926,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
         isCompleted: false,
         estimatedMinutes: estimatedMinutes,
         subtasks: subtasks,
+        isPinned: _isPinned,
+        isImportant: _isImportant,
       );
       widget.onEventAdded(event);
     }
@@ -5439,6 +5987,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
   TimeOfDay? _start;
   TimeOfDay? _end;
   late List<String> _categories;
+  late bool _isPinned;
+  late bool _isImportant;
   final List<DateTime> _selectedDates = [];
   late DateTime _lastPickedDate;
 
@@ -5472,6 +6022,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
         TextEditingController(text: minutes > 0 ? minutes.toString() : '');
     _subtaskController = TextEditingController();
     _subtasks = List<String>.from(init.subtasks);
+    _isPinned = init.isPinned;
+    _isImportant = init.isImportant;
   }
 
   Duration? get _calculatedDuration {
@@ -5644,6 +6196,25 @@ class _EditEventDialogState extends State<EditEventDialog> {
                               icon: Icons.notes_outlined,
                               alignLabelWithHint: true,
                             ),
+                          ),
+                          const SizedBox(height: 20),
+                          _sectionLabel('Options'),
+                          const SizedBox(height: 4),
+                          SwitchListTile(
+                            value: _isPinned,
+                            onChanged: (v) => setState(() => _isPinned = v),
+                            title: const Text('Pin', style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Move to top of the list'),
+                            secondary: Icon(Icons.push_pin, color: Colors.blueGrey[500]),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          SwitchListTile(
+                            value: _isImportant,
+                            onChanged: (v) => setState(() => _isImportant = v),
+                            title: const Text('Important', style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text('Highlight and prioritise this item'),
+                            secondary: Icon(Icons.priority_high_rounded, color: Colors.amber[700]),
+                            contentPadding: EdgeInsets.zero,
                           ),
                         ],
                       ),
@@ -6195,6 +6766,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
                 i == 0 ? List<String>.from(widget.initial.completedDates) : const [],
             estimatedMinutes: estimatedMinutes,
             subtasks: subtasks,
+            isPinned: _isPinned,
+            isImportant: _isImportant,
           ),
         );
     }
@@ -8850,10 +9423,16 @@ class ProfilePage extends StatelessWidget {
     super.key,
     required this.currentLocale,
     required this.onLocaleChanged,
+    this.dayStartTime,
+    this.dayEndTime,
+    this.onDayTimesChanged,
   });
 
   final Locale? currentLocale;
   final ValueChanged<Locale> onLocaleChanged;
+  final TimeOfDay? dayStartTime;
+  final TimeOfDay? dayEndTime;
+  final void Function(TimeOfDay start, TimeOfDay end)? onDayTimesChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -8979,6 +9558,19 @@ class ProfilePage extends StatelessWidget {
                     accentColor: const Color(0xFF3B82F6),
                     cardColor: card,
                     borderColor: border,
+                    onTap: onDayTimesChanged == null
+                        ? null
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ScheduleSettingsPage(
+                                  dayStartTime: dayStartTime ??
+                                      const TimeOfDay(hour: 8, minute: 0),
+                                  dayEndTime: dayEndTime ??
+                                      const TimeOfDay(hour: 20, minute: 0),
+                                  onChanged: onDayTimesChanged!,
+                                ),
+                              ),
+                            ),
                   ),
                   _ProfileOptionTile(
                     icon: Icons.archive_outlined,
@@ -9243,6 +9835,193 @@ class _ProfileOptionTile extends StatelessWidget {
               ),
             const SizedBox(width: 6),
             Icon(Icons.chevron_right, color: Colors.blueGrey[300], size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Schedule Settings Page ────────────────────────────────────────────────────
+
+class ScheduleSettingsPage extends StatefulWidget {
+  const ScheduleSettingsPage({
+    super.key,
+    required this.dayStartTime,
+    required this.dayEndTime,
+    required this.onChanged,
+  });
+
+  final TimeOfDay dayStartTime;
+  final TimeOfDay dayEndTime;
+  final void Function(TimeOfDay start, TimeOfDay end) onChanged;
+
+  @override
+  State<ScheduleSettingsPage> createState() => _ScheduleSettingsPageState();
+}
+
+class _ScheduleSettingsPageState extends State<ScheduleSettingsPage> {
+  late TimeOfDay _start;
+  late TimeOfDay _end;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.dayStartTime;
+    _end = widget.dayEndTime;
+  }
+
+  String _fmt(TimeOfDay t) {
+    final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+    final m = t.minute.toString().padLeft(2, '0');
+    final period = t.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$h:$m $period';
+  }
+
+  Future<void> _pickTime({required bool isStart}) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isStart ? _start : _end,
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _start = picked;
+      } else {
+        _end = picked;
+      }
+    });
+    widget.onChanged(_start, _end);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const bg = Color(0xFFF1F4F9);
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.blueGrey[800]),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('Schedule Settings',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.blueGrey.shade100),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                  child: Text('Daily Work Window',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.blueGrey[700])),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Text(
+                      'Smart tasks will only be scheduled within these hours.',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.blueGrey[500])),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(Icons.wb_sunny_outlined,
+                      color: Colors.orange[400]),
+                  title: const Text('Day starts at',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  trailing: Text(_fmt(_start),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  onTap: () => _pickTime(isStart: true),
+                ),
+                const Divider(height: 1, indent: 16),
+                ListTile(
+                  leading: Icon(Icons.nights_stay_outlined,
+                      color: Colors.indigo[300]),
+                  title: const Text('Day ends at',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  trailing: Text(_fmt(_end),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  onTap: () => _pickTime(isStart: false),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AddTypeRow extends StatelessWidget {
+  const _AddTypeRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+    this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = color ?? Colors.blue[700]!;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42, height: 42,
+              decoration: BoxDecoration(
+                color: accent.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: accent, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: TextStyle(
+                          color: Colors.blueGrey[500], fontSize: 12)),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded,
+                size: 14, color: Colors.blueGrey[300]),
           ],
         ),
       ),

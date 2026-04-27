@@ -1,30 +1,5 @@
 part of 'main.dart';
 
-class _BackspaceIntent extends Intent {
-  const _BackspaceIntent();
-}
-
-class _BackspaceAction extends CallbackAction<_BackspaceIntent> {
-  _BackspaceAction({
-    required this.shouldHandle,
-    required this.onHandled,
-  }) : super(onInvoke: (intent) {
-    if (shouldHandle()) {
-      onHandled();
-      return null;
-    }
-    return null;
-  });
-
-  final bool Function() shouldHandle;
-  final VoidCallback onHandled;
-  
-  @override
-  bool consumesKey(_BackspaceIntent intent) {
-    return shouldHandle();
-  }
-}
-
 
 class _NoteLineData {
   _NoteLineData({
@@ -45,6 +20,25 @@ class _NoteLineData {
   }
 }
 
+/// A snapshot of the entire note editor state, used for undo/redo.
+class _NoteSnapshot {
+  const _NoteSnapshot({required this.title, required this.lines});
+  final String title;
+  final List<_SnapshotLine> lines;
+}
+
+class _SnapshotLine {
+  const _SnapshotLine({
+    required this.text,
+    required this.isChecklist,
+    required this.isChecked,
+  });
+  final String text;
+  final bool isChecklist;
+  final bool isChecked;
+}
+
+
 class NoteEditorPage extends StatefulWidget {
   final String category;
   final NoteEntry? existing;
@@ -64,15 +58,165 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   final List<_NoteLineData> _lines = [];
   int? _activeLineIndex;
   bool _suppressTextListener = false;
-
   bool _dirty = false;
+
+  // ── Undo / Redo ──────────────────────────────────────────────────────────
+  final List<_NoteSnapshot> _undoStack = [];
+  final List<_NoteSnapshot> _redoStack = [];
+
+  /// Snapshot captured the moment the user begins a typing session.
+  _NoteSnapshot? _preTypingSnapshot;
+  bool _isInTypingSession = false;
+  Timer? _sessionEndTimer;
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     _title = TextEditingController(text: widget.existing?.title ?? '');
-    _title.addListener(_markDirty);
+    _title.addListener(_onTitleChanged);
     _populateLinesFromDescription(widget.existing?.description ?? '');
+  }
+
+  // ── Undo / Redo helpers ──────────────────────────────────────────────────
+
+  _NoteSnapshot _captureSnapshot() {
+    return _NoteSnapshot(
+      title: _title.text,
+      lines: _lines
+          .map((l) => _SnapshotLine(
+                text: l.controller.text,
+                isChecklist: l.isChecklist,
+                isChecked: l.isChecked,
+              ))
+          .toList(),
+    );
+  }
+
+  bool _snapshotsEqual(_NoteSnapshot a, _NoteSnapshot b) {
+    if (a.title != b.title) return false;
+    if (a.lines.length != b.lines.length) return false;
+    for (var i = 0; i < a.lines.length; i++) {
+      if (a.lines[i].text != b.lines[i].text) return false;
+      if (a.lines[i].isChecklist != b.lines[i].isChecklist) return false;
+      if (a.lines[i].isChecked != b.lines[i].isChecked) return false;
+    }
+    return true;
+  }
+
+  /// Push [snapshot] onto the undo stack and clear the redo stack.
+  /// Skips if [snapshot] is identical to the current top.
+  void _pushToUndo(_NoteSnapshot snapshot) {
+    if (_undoStack.isNotEmpty && _snapshotsEqual(_undoStack.last, snapshot)) {
+      return;
+    }
+    _undoStack.add(snapshot);
+    if (_undoStack.length > 100) _undoStack.removeAt(0);
+    _redoStack.clear();
+    if (mounted) setState(() {});
+  }
+
+  /// Called from text-change listeners (normal typing — no structural change).
+  void _onTypingChange() {
+    if (!_isInTypingSession) {
+      // Remember state before the typing session began.
+      _preTypingSnapshot = _captureSnapshot();
+      _isInTypingSession = true;
+    }
+    _sessionEndTimer?.cancel();
+    _sessionEndTimer =
+        Timer(const Duration(milliseconds: 600), _endTypingSession);
+  }
+
+  /// Called when the debounce timer fires — typing paused.
+  void _endTypingSession() {
+    if (!_isInTypingSession) return;
+    final before = _preTypingSnapshot;
+    _preTypingSnapshot = null;
+    _isInTypingSession = false;
+    if (before != null) _pushToUndo(before);
+  }
+
+  /// Call this BEFORE applying any structural change (Enter, delete line,
+  /// toggle checklist, checkbox toggle). Flushes any pending typing session
+  /// first so every distinct action is a separate undo step.
+  void _commitBeforeStructuralChange() {
+    _sessionEndTimer?.cancel();
+    _endTypingSession(); // may push pre-typing snapshot
+
+    // Now push the current state as the "before structural change" snapshot.
+    _pushToUndo(_captureSnapshot());
+  }
+
+  void _undo() {
+    _sessionEndTimer?.cancel();
+
+    // Flush any mid-typing state so it lands on the undo stack.
+    if (_isInTypingSession && _preTypingSnapshot != null) {
+      final before = _preTypingSnapshot!;
+      _preTypingSnapshot = null;
+      _isInTypingSession = false;
+      final current = _captureSnapshot();
+      if (!_snapshotsEqual(before, current)) {
+        _undoStack.add(before);
+        if (_undoStack.length > 100) _undoStack.removeAt(0);
+        // Don't clear redo here — we're undoing, not making a new change.
+      }
+    } else {
+      _preTypingSnapshot = null;
+      _isInTypingSession = false;
+    }
+
+    if (_undoStack.isEmpty) return;
+
+    final current = _captureSnapshot();
+    final snapshot = _undoStack.removeLast();
+    _redoStack.add(current);
+    _restoreSnapshot(snapshot);
+    setState(() {});
+  }
+
+  void _redo() {
+    _sessionEndTimer?.cancel();
+    _preTypingSnapshot = null;
+    _isInTypingSession = false;
+
+    if (_redoStack.isEmpty) return;
+
+    final current = _captureSnapshot();
+    final snapshot = _redoStack.removeLast();
+    _undoStack.add(current);
+    if (_undoStack.length > 100) _undoStack.removeAt(0);
+    _restoreSnapshot(snapshot);
+    setState(() {});
+  }
+
+  void _restoreSnapshot(_NoteSnapshot snapshot) {
+    _suppressTextListener = true;
+    _title.text = snapshot.title;
+    setState(() {
+      _clearLines();
+      for (final line in snapshot.lines) {
+        _addLine(
+          text: line.text,
+          isChecklist: line.isChecklist,
+          isChecked: line.isChecked,
+          markDirty: false,
+        );
+      }
+      if (_lines.isEmpty) _addLine(markDirty: false);
+      _dirty = true;
+    });
+    _suppressTextListener = false;
+  }
+
+  // ── Existing editor logic ────────────────────────────────────────────────
+
+  void _onTitleChanged() {
+    if (_suppressTextListener) return;
+    _markDirty();
+    _onTypingChange();
   }
 
   void _populateLinesFromDescription(String description) {
@@ -132,7 +276,12 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     if (_suppressTextListener) return;
     _markDirty();
     final text = line.controller.text;
-    if (!text.contains('\n')) return;
+    if (!text.contains('\n')) {
+      _onTypingChange(); // normal typing
+      return;
+    }
+    // Enter key — structural change.
+    _commitBeforeStructuralChange();
     final parts = text.split('\n');
     final first = parts.first;
     final rest = parts.sublist(1);
@@ -171,21 +320,10 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     });
   }
 
-  void _removeLine(int index) {
-    if (index < 0 || index >= _lines.length) return;
-    setState(() {
-      _lines[index].dispose();
-      _lines.removeAt(index);
-      if (_lines.isEmpty) {
-        _addLine(markDirty: false);
-      }
-      _dirty = true;
-    });
-  }
-
   void _toggleChecklistLine() {
     final i = _activeLineIndex;
     if (i == null || i < 0 || i >= _lines.length) return;
+    _commitBeforeStructuralChange();
     setState(() {
       final line = _lines[i];
       line.isChecklist = !line.isChecklist;
@@ -198,72 +336,54 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     });
   }
 
-void _handleBackspace(int index) {
-  if (index < 0 || index >= _lines.length) return;
-  final line = _lines[index];
-  if (!line.focusNode.hasFocus) return;
+  void _handleBackspace(int index) {
+    if (index < 0 || index >= _lines.length) return;
+    final line = _lines[index];
+    if (!line.focusNode.hasFocus) return;
+    if (line.controller.text.trim().isNotEmpty) return;
+    if (_lines.length == 1) return;
 
-  // ✅ consider spaces as empty
-  if (line.controller.text.trim().isNotEmpty) return;
+    _commitBeforeStructuralChange();
+    setState(() {
+      line.dispose();
+      _lines.removeAt(index);
+      _dirty = true;
+    });
 
-  if (_lines.length == 1) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _lines.isEmpty) return;
+      final prevIndex = (index - 1).clamp(0, _lines.length - 1);
+      _activeLineIndex = prevIndex;
+      final prev = _lines[prevIndex];
+      prev.focusNode.requestFocus();
+      prev.controller.selection = TextSelection.collapsed(
+        offset: prev.controller.text.length,
+      );
+    });
+  }
 
-  setState(() {
-    line.dispose();
-    _lines.removeAt(index);
-    _dirty = true;
-  });
-
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _lines.isEmpty) return;
-    final prevIndex = (index - 1).clamp(0, _lines.length - 1);
-    _activeLineIndex = prevIndex;
-    final prev = _lines[prevIndex];
-    prev.focusNode.requestFocus();
-
-    // ✅ put cursor at end of previous line (feels natural)
-    prev.controller.selection = TextSelection.collapsed(
-      offset: prev.controller.text.length,
-    );
-  });
-}
-
-bool _shouldHandleBackspace(_NoteLineData line) {
-  if (!line.focusNode.hasFocus) return false;
-  if (_lines.length == 1) return false;
-
-  final selection = line.controller.selection;
-  if (!selection.isValid || !selection.isCollapsed) return false;
-
-  final text = line.controller.text;
-
-  // Only intercept when line is completely empty (not even spaces)
-  return text.isEmpty;
-}
-
-
-Map<ShortcutActivator, Intent> _lineShortcuts(_NoteLineData line) {
-  return const <ShortcutActivator, Intent>{
-    SingleActivator(LogicalKeyboardKey.backspace): _BackspaceIntent(),
-  };
-}
-
+  bool _shouldHandleBackspace(_NoteLineData line) {
+    if (!line.focusNode.hasFocus) return false;
+    if (_lines.length == 1) return false;
+    final selection = line.controller.selection;
+    if (!selection.isValid || !selection.isCollapsed) return false;
+    return line.controller.text.isEmpty;
+  }
 
   void _markDirty() {
     if (!_dirty) setState(() => _dirty = true);
   }
 
-String _serializeLines() {
-  return _lines
-      .where((line) => line.controller.text.trim().isNotEmpty || line.isChecklist)
-      .map((line) {
-        final text = line.controller.text;
-        if (!line.isChecklist) return text;
-        return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
-      })
-      .join('\n');
-}
-
+  String _serializeLines() {
+    return _lines
+        .where((line) => line.controller.text.trim().isNotEmpty || line.isChecklist)
+        .map((line) {
+          final text = line.controller.text;
+          if (!line.isChecklist) return text;
+          return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
+        })
+        .join('\n');
+  }
 
   void _clearLines() {
     for (final line in _lines) {
@@ -310,10 +430,13 @@ String _serializeLines() {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        await _close();
-        return false;
+    final canUndo = _undoStack.isNotEmpty;
+    final canRedo = _redoStack.isNotEmpty;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop) await _close();
       },
       child: Scaffold(
         backgroundColor: Colors.white,
@@ -325,6 +448,22 @@ String _serializeLines() {
             onPressed: _close,
           ),
           actions: [
+            IconButton(
+              icon: Icon(
+                Icons.undo,
+                color: canUndo ? null : Colors.grey[300],
+              ),
+              onPressed: canUndo ? _undo : null,
+              tooltip: 'Undo',
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.redo,
+                color: canRedo ? null : Colors.grey[300],
+              ),
+              onPressed: canRedo ? _redo : null,
+              tooltip: 'Redo',
+            ),
             IconButton(
               icon: const Icon(Icons.checklist_outlined),
               onPressed: _toggleChecklistLine,
@@ -358,81 +497,83 @@ String _serializeLines() {
     );
   }
 
-Widget _buildLinesEditor() {
-  return ListView.separated(
-    padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-    itemCount: _lines.length,
-    separatorBuilder: (_, __) => const SizedBox(height: 2),
-    itemBuilder: (context, index) {
-      final line = _lines[index];
-      final isChecklist = line.isChecklist;
-      return Focus(
-        onKeyEvent: (node, event) {
-          if (event is KeyDownEvent && 
-              event.logicalKey == LogicalKeyboardKey.backspace) {
-            if (_shouldHandleBackspace(line)) {
-              _handleBackspace(index);
-              return KeyEventResult.handled;
+  Widget _buildLinesEditor() {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+      itemCount: _lines.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 2),
+      itemBuilder: (context, index) {
+        final line = _lines[index];
+        final isChecklist = line.isChecklist;
+        return Focus(
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.backspace) {
+              if (_shouldHandleBackspace(line)) {
+                _handleBackspace(index);
+                return KeyEventResult.handled;
+              }
             }
-          }
-          return KeyEventResult.ignored;
-        },
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (isChecklist)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: Checkbox(
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity:
-                        const VisualDensity(horizontal: -4, vertical: -4),
-                    value: line.isChecked,
-                    onChanged: (value) {
-                      setState(() {
-                        line.isChecked = value ?? false;
-                        _dirty = true;
-                      });
-                    },
+            return KeyEventResult.ignored;
+          },
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (isChecklist)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: Checkbox(
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity:
+                          const VisualDensity(horizontal: -4, vertical: -4),
+                      value: line.isChecked,
+                      onChanged: (value) {
+                        _commitBeforeStructuralChange();
+                        setState(() {
+                          line.isChecked = value ?? false;
+                          _dirty = true;
+                        });
+                      },
+                    ),
                   ),
                 ),
-              ),
-            if (isChecklist) const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: line.controller,
-                focusNode: line.focusNode,
-                decoration: InputDecoration(
-                  hintText: index == 0 ? 'Start typing...' : null,
-                  border: InputBorder.none,
-                  isCollapsed: true,
+              if (isChecklist) const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: line.controller,
+                  focusNode: line.focusNode,
+                  decoration: InputDecoration(
+                    hintText: index == 0 ? 'Start typing...' : null,
+                    border: InputBorder.none,
+                    isCollapsed: true,
+                  ),
+                  style: TextStyle(
+                    color: line.isChecklist && line.isChecked
+                        ? Colors.blueGrey
+                        : Colors.black87,
+                    decoration: line.isChecklist && line.isChecked
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
+                  ),
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  maxLines: null,
+                  minLines: 1,
                 ),
-                style: TextStyle(
-                  color: line.isChecklist && line.isChecked
-                      ? Colors.blueGrey
-                      : Colors.black87,
-                  decoration: line.isChecklist && line.isChecked
-                      ? TextDecoration.lineThrough
-                      : TextDecoration.none,
-                ),
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-                maxLines: null,
-                minLines: 1,
               ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _sessionEndTimer?.cancel();
     _title.dispose();
     _clearLines();
     super.dispose();
