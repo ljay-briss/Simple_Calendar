@@ -18,6 +18,7 @@ class AddSmartTaskDialog extends StatefulWidget {
     required this.dayStartHour,
     required this.dayEndHour,
     required this.onTaskCreated,
+    this.existing, // non-null = edit mode
   });
 
   final DateTime selectedDate;
@@ -26,6 +27,8 @@ class AddSmartTaskDialog extends StatefulWidget {
   final int dayStartHour;
   final int dayEndHour;
   final void Function(Event parent, List<Event> sessions) onTaskCreated;
+  /// The parent smart-task being edited (null = create mode).
+  final Event? existing;
 
   @override
   State<AddSmartTaskDialog> createState() => _AddSmartTaskDialogState();
@@ -40,8 +43,16 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
 
   // Step 1
   late DateTime _dueDate;
-  int _totalHours = 1;
-  int _totalMinutes = 0;
+
+  // Step 1 – duration controllers (must live in state so they aren't recreated on rebuild)
+  final _hoursCtrl = TextEditingController(text: '1');
+  final _minutesCtrl = TextEditingController(text: '0');
+
+  // Validation
+  String? _inlineError;
+
+  // Step 1 – reminder
+  Duration? _reminder;
 
   // Step 2
   WorkScheduleType _scheduleType = WorkScheduleType.evenDays;
@@ -56,23 +67,44 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
   // per-day duration overrides for custom mode (day key → minutes)
   final Map<String, int> _customDurations = {};
 
-  int get _totalWorkMinutes => _totalHours * 60 + _totalMinutes;
+  int get _totalWorkMinutes =>
+      (int.tryParse(_hoursCtrl.text) ?? 0) * 60 +
+      (int.tryParse(_minutesCtrl.text) ?? 0).clamp(0, 59);
 
   // ── lifecycle ───────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    _category =
-        widget.categories.isNotEmpty ? widget.categories.first : 'General';
-    _dueDate = widget.selectedDate.isAfter(DateTime.now())
-        ? widget.selectedDate.add(const Duration(days: 7))
-        : DateTime.now().add(const Duration(days: 14));
+    final ex = widget.existing;
+    if (ex != null) {
+      // Edit mode — pre-fill from the existing parent task.
+      _titleCtrl.text = ex.title;
+      _category = ex.category;
+      _dueDate = ex.date;
+      final totalMins = ex.estimatedMinutes ?? 60;
+      _hoursCtrl.text = (totalMins ~/ 60).toString();
+      _minutesCtrl.text = (totalMins % 60).toString();
+      _scheduleType = WorkScheduleType.values.firstWhere(
+        (t) => t.name == ex.workScheduleType,
+        orElse: () => WorkScheduleType.evenDays,
+      );
+      _workDaysCount = ex.workDaysCount ?? 5;
+      _reminder = ex.reminder;
+    } else {
+      _category =
+          widget.categories.isNotEmpty ? widget.categories.first : 'General';
+      _dueDate = widget.selectedDate.isAfter(DateTime.now())
+          ? widget.selectedDate.add(const Duration(days: 7))
+          : DateTime.now().add(const Duration(days: 14));
+    }
   }
 
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _hoursCtrl.dispose();
+    _minutesCtrl.dispose();
     super.dispose();
   }
 
@@ -80,46 +112,51 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
 
   void _next() {
     if (_step == 0 && _titleCtrl.text.trim().isEmpty) {
-      _snack('Please enter a title.');
+      setState(() => _inlineError = 'Please enter a title.');
       return;
     }
     if (_step == 1 && _totalWorkMinutes == 0) {
-      _snack('Please enter a total work duration.');
+      setState(() => _inlineError = 'Please enter a total work duration.');
       return;
     }
     if (_step == 2) {
       if (_scheduleType == WorkScheduleType.custom &&
           _customSelectedDays.isEmpty) {
-        _snack('Please select at least one day.');
+        setState(() => _inlineError = 'Please select at least one day.');
         return;
       }
       _buildPreview();
     }
-    setState(() => _step++);
+    setState(() {
+      _inlineError = null;
+      _step++;
+    });
   }
 
-  void _back() => setState(() => _step--);
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
-  }
+  void _back() => setState(() {
+        _inlineError = null;
+        _step--;
+      });
 
   // ── scheduling ──────────────────────────────────────────────────────────────
 
   void _buildPreview() {
-    final parentId = _newEventId();
+    // In edit mode, keep the same parent ID so sessions link correctly.
+    final parentId = widget.existing?.id ?? _newEventId();
     _parentEvent = Event(
       id: parentId,
       title: _titleCtrl.text.trim(),
-      description: '',
+      description: widget.existing?.description ?? '',
       date: _dueDate,
       category: _category,
       type: EventType.task,
       isSmartTask: true,
+      isPinned: widget.existing?.isPinned ?? false,
+      isImportant: widget.existing?.isImportant ?? false,
       estimatedMinutes: _totalWorkMinutes,
       workScheduleType: _scheduleType.name,
       workDaysCount: _workDaysCount,
+      reminder: _reminder,
     );
     _sessions = _computeSessions(_parentEvent!);
   }
@@ -218,6 +255,7 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
         parentTaskId: parent.id,
         estimatedMinutes: mins,
         workScheduleType: parent.workScheduleType,
+        reminder: parent.reminder,
       );
       sessions.add(session);
       scheduledByDay.putIfAbsent(dayKey, () => []).add(session);
@@ -360,7 +398,13 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
   // ── header ──────────────────────────────────────────────────────────────────
 
   Widget _header() {
-    const titles = ['New Smart Task', 'Timeline', 'Work Schedule', 'Review'];
+    final isEdit = widget.existing != null;
+    final titles = [
+      isEdit ? 'Edit Smart Task' : 'New Smart Task',
+      'Timeline',
+      'Work Schedule',
+      'Review',
+    ];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -426,18 +470,52 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
   // ── step content ────────────────────────────────────────────────────────────
 
   Widget _stepContent() {
+    final Widget inner;
     switch (_step) {
       case 0:
-        return _step0Basics();
+        inner = _step0Basics();
       case 1:
-        return _step1Timeline();
+        inner = _step1Timeline();
       case 2:
-        return _step2Schedule();
+        inner = _step2Schedule();
       case 3:
-        return _step3Review();
+        inner = _step3Review();
       default:
-        return const SizedBox.shrink();
+        inner = const SizedBox.shrink();
     }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_inlineError != null) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red.shade600, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _inlineError!,
+                    style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        inner,
+      ],
+    );
   }
 
   // ── Step 0: Basics ──────────────────────────────────────────────────────────
@@ -453,6 +531,9 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
           controller: _titleCtrl,
           autofocus: true,
           textCapitalization: TextCapitalization.sentences,
+          onChanged: (_) {
+            if (_inlineError != null) setState(() => _inlineError = null);
+          },
           decoration: _sharedInputDecoration(
             label: 'e.g. Essay for English class',
             icon: Icons.title,
@@ -547,24 +628,22 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
         Row(
           children: [
             Expanded(
-              child: _numberField(
-                label: 'Hours',
-                icon: Icons.timelapse_outlined,
-                value: _totalHours,
-                min: 0,
-                max: 99,
-                onChanged: (v) => setState(() => _totalHours = v),
+              child: TextField(
+                controller: _hoursCtrl,
+                keyboardType: TextInputType.number,
+                decoration: _sharedInputDecoration(
+                    label: 'Hours', icon: Icons.timelapse_outlined),
+                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _numberField(
-                label: 'Minutes',
-                icon: Icons.timer_outlined,
-                value: _totalMinutes,
-                min: 0,
-                max: 59,
-                onChanged: (v) => setState(() => _totalMinutes = v),
+              child: TextField(
+                controller: _minutesCtrl,
+                keyboardType: TextInputType.number,
+                decoration: _sharedInputDecoration(
+                    label: 'Minutes', icon: Icons.timer_outlined),
+                onChanged: (_) => setState(() {}),
               ),
             ),
           ],
@@ -574,6 +653,10 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
           _infoBox(Icons.info_outline,
               'Total: ${_fmtDuration(_totalWorkMinutes)}'),
         ],
+        const SizedBox(height: 16),
+        _sectionLabel('Reminder'),
+        const SizedBox(height: 8),
+        _reminderPicker(),
         const SizedBox(height: 16),
         // Show window info
         _infoBox(
@@ -585,6 +668,66 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
     );
   }
 
+  Widget _reminderPicker() {
+    final options = kReminderOptions.entries.toList();
+    final currentLabel = _reminder == null
+        ? 'No reminder'
+        : kReminderOptions.entries
+            .firstWhere(
+              (e) => e.value == _reminder,
+              orElse: () => kReminderOptions.entries.first,
+            )
+            .key;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blueGrey.shade100),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: ButtonTheme(
+          alignedDropdown: true,
+          child: DropdownButton<Duration?>(
+            value: _reminder,
+            isExpanded: true,
+            icon: Icon(Icons.expand_more, color: Colors.blueGrey[400]),
+            style: TextStyle(
+              color: Colors.blueGrey[700],
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
+            items: options.map((entry) {
+              return DropdownMenuItem<Duration?>(
+                value: entry.value,
+                child: Row(
+                  children: [
+                    Icon(Icons.notifications_outlined,
+                        size: 18, color: Colors.blueGrey[400]),
+                    const SizedBox(width: 10),
+                    Text(entry.key),
+                  ],
+                ),
+              );
+            }).toList(),
+            onChanged: (val) => setState(() => _reminder = val),
+            hint: Row(
+              children: [
+                Icon(Icons.notifications_outlined,
+                    size: 18, color: Colors.blueGrey[400]),
+                const SizedBox(width: 10),
+                Text(currentLabel,
+                    style: TextStyle(
+                        color: Colors.blueGrey[700],
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _pickDueDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -593,26 +736,6 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
     if (picked != null) setState(() => _dueDate = picked);
-  }
-
-  Widget _numberField({
-    required String label,
-    required IconData icon,
-    required int value,
-    required int min,
-    required int max,
-    required ValueChanged<int> onChanged,
-  }) {
-    final ctrl = TextEditingController(text: value.toString());
-    return TextField(
-      controller: ctrl,
-      keyboardType: TextInputType.number,
-      decoration: _sharedInputDecoration(label: label, icon: icon),
-      onChanged: (s) {
-        final v = int.tryParse(s);
-        if (v != null) onChanged(v.clamp(min, max));
-      },
-    );
   }
 
   // ── Step 2: Schedule ────────────────────────────────────────────────────────
@@ -896,37 +1019,45 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
     );
   }
 
+  /// Compute a lightweight preview by running the real scheduling algorithm
+  /// on a dummy parent — guarantees the preview always matches Step 3.
   Widget _sessionPreviewText() {
-    final daysAvail = _dueDate
-        .difference(DateTime.now())
-        .inDays
-        .clamp(1, 14);
+    if (_totalWorkMinutes == 0) return const SizedBox.shrink();
 
     String preview;
-    switch (_scheduleType) {
-      case WorkScheduleType.evenDays:
-        final n = _workDaysCount;
-        final m = (_totalWorkMinutes / n).ceil();
+
+    if (_scheduleType == WorkScheduleType.custom) {
+      if (_customSelectedDays.isEmpty) {
+        preview = 'No days selected';
+      } else {
+        final m = (_totalWorkMinutes / _customSelectedDays.length).ceil();
         preview =
-            '$n session${n == 1 ? '' : 's'} · ${_fmtDuration(m)} each';
-      case WorkScheduleType.timesPerWeek:
-        final weeks = (daysAvail / 7).ceil().clamp(1, 2);
-        final total = _workDaysCount * weeks;
-        final m = (_totalWorkMinutes / total).ceil();
-        preview =
-            '$total session${total == 1 ? '' : 's'} · ${_fmtDuration(m)} each';
-      case WorkScheduleType.everyday:
-        final n = (_totalWorkMinutes / 30).ceil();
-        preview = '$n day${n == 1 ? '' : 's'} of 30 min sessions';
-      case WorkScheduleType.custom:
-        if (_customSelectedDays.isEmpty) {
-          preview = 'No days selected';
-        } else {
-          final m =
-              (_totalWorkMinutes / _customSelectedDays.length).ceil();
-          preview =
-              '${_customSelectedDays.length} session${_customSelectedDays.length == 1 ? '' : 's'} · ~${_fmtDuration(m)} each';
-        }
+            '${_customSelectedDays.length} session${_customSelectedDays.length == 1 ? '' : 's'} · ~${_fmtDuration(m)} each';
+      }
+    } else {
+      // Run the real algorithm on a dummy parent for an exact count.
+      final dummy = Event(
+        id: 'preview',
+        title: '',
+        description: '',
+        date: _dueDate,
+        category: _category,
+        type: EventType.task,
+        isSmartTask: true,
+        estimatedMinutes: _totalWorkMinutes,
+        workScheduleType: _scheduleType.name,
+        workDaysCount: _workDaysCount,
+      );
+      final sessions = _computeSessions(dummy);
+      final n = sessions.length;
+      if (n == 0) {
+        preview = 'No days available in range';
+      } else {
+        final avgMins = sessions.isEmpty
+            ? 0
+            : sessions.map((s) => s.estimatedMinutes ?? 0).reduce((a, b) => a + b) ~/ n;
+        preview = '$n session${n == 1 ? '' : 's'} · ~${_fmtDuration(avgMins)} each';
+      }
     }
 
     return _infoBox(Icons.auto_awesome_outlined, preview);
@@ -1003,12 +1134,13 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
                 ),
                 // Allow tapping to change time
                 IconButton(
-                  icon: Icon(Icons.edit_outlined,
+                  icon: Icon(Icons.edit_calendar_outlined,
                       size: 16, color: Colors.blueGrey[400]),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => _editSessionTime(i),
+                  tooltip: 'Edit date & time',
+                  onPressed: () => _editSessionDateTime(i),
                 ),
               ],
             ),
@@ -1018,26 +1150,52 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
         _infoBox(
           Icons.info_outline,
           'Due date: ${_fmtDate(_dueDate)}  ·  '
-          'Total: ${_fmtDuration(_totalWorkMinutes)}',
+          'Total: ${_fmtDuration(_totalWorkMinutes)}'
+          '${_reminder != null ? '  ·  Reminder: ${reminderLabelFromDuration(_reminder)}' : ''}',
         ),
         const SizedBox(height: 16),
       ],
     );
   }
 
-  Future<void> _editSessionTime(int index) async {
+  Future<void> _editSessionDateTime(int index) async {
     final session = _sessions[index];
-    final picked = await showTimePicker(
+
+    // Step 1 — pick a date (independent of other sessions).
+    final now = DateTime.now();
+    final pickedDate = await showDatePicker(
       context: context,
-      initialTime: session.startTime ?? TimeOfDay(hour: widget.dayStartHour, minute: 0),
+      initialDate: session.date.isBefore(now) ? now : session.date,
+      firstDate: now,
+      lastDate: _dueDate.add(const Duration(days: 60)),
+      helpText: 'Select session date',
     );
-    if (picked == null) return;
+    if (!mounted) return;
+
+    // Step 2 — pick a time.
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime:
+          session.startTime ?? TimeOfDay(hour: widget.dayStartHour, minute: 0),
+      helpText: 'Select start time',
+    );
+    if (!mounted) return;
+
+    // Apply whatever was changed — either or both pickers may have been used.
+    final newDate = pickedDate ?? session.date;
+    final newStart =
+        pickedTime ?? session.startTime ?? TimeOfDay(hour: widget.dayStartHour, minute: 0);
     final mins = session.estimatedMinutes ?? 30;
-    final endMin = picked.hour * 60 + picked.minute + mins;
+    final endMin = newStart.hour * 60 + newStart.minute + mins;
     final newEnd = TimeOfDay(
         hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+
     setState(() {
-      _sessions[index] = session.copyWith(startTime: picked, endTime: newEnd);
+      _sessions[index] = session.copyWith(
+        date: newDate,
+        startTime: newStart,
+        endTime: newEnd,
+      );
     });
   }
 

@@ -252,36 +252,81 @@ class NotificationService {
     }
   }
 
+  /// Schedule reminder notifications for [event].
+  /// For repeating events, pre-schedules all upcoming occurrences so
+  /// notifications fire without the app needing to be open.
   Future<void> scheduleEventReminder(Event event) async {
     if (!_initialized) return;
     if (event.type == EventType.note) return;
-    final scheduledAt = _reminderTime(event);
-    if (scheduledAt == null) return;
+    if (event.reminder == null || event.startTime == null) return;
 
+    final base = DateTime(
+      event.date.year, event.date.month, event.date.day,
+      event.startTime!.hour, event.startTime!.minute,
+    );
+    final now = DateTime.now();
+
+    if (event.repeatFrequency == RepeatFrequency.none) {
+      final at = base.subtract(event.reminder!);
+      if (at.isAfter(now)) {
+        await _postNotification(id: event.notificationId, event: event, at: at);
+      }
+      return;
+    }
+
+    // Recurring: compute all upcoming reminder times and schedule each one
+    // with a unique, predictable ID derived from the event ID + occurrence index.
+    final times = _allUpcomingReminderTimes(
+      base: base,
+      reminder: event.reminder!,
+      freq: event.repeatFrequency,
+      excludedDates: event.excludedDates,
+      now: now,
+    );
+    for (int i = 0; i < times.length; i++) {
+      final id = _stableHash('${event.id}_occ_$i');
+      await _postNotification(id: id, event: event, at: times[i]);
+    }
+  }
+
+  Future<void> _postNotification({
+    required int id,
+    required Event event,
+    required DateTime at,
+  }) async {
     await AwesomeNotifications().createNotification(
       content: NotificationContent(
-        id: event.notificationId,
+        id: id,
         channelKey: _channelKey,
         title: event.title.isEmpty ? 'Upcoming event' : event.title,
         body: _buildBody(event),
         notificationLayout: NotificationLayout.Default,
       ),
       schedule: NotificationCalendar(
-        year: scheduledAt.year,
-        month: scheduledAt.month,
-        day: scheduledAt.day,
-        hour: scheduledAt.hour,
-        minute: scheduledAt.minute,
-        second: scheduledAt.second,
+        year: at.year,
+        month: at.month,
+        day: at.day,
+        hour: at.hour,
+        minute: at.minute,
+        second: 0,
         millisecond: 0,
         allowWhileIdle: true,
+        preciseAlarm: true,
       ),
     );
   }
 
+  /// Cancel the single notification for a non-repeating event AND all
+  /// pre-scheduled occurrence notifications for repeating events.
   Future<void> cancelEventReminder(Event event) async {
     if (!_initialized) return;
+    // Cancel the base ID (used for non-repeating events).
     await AwesomeNotifications().cancel(event.notificationId);
+    // Cancel all pre-scheduled occurrence IDs. The cap of 60 covers the
+    // maximum we ever schedule (daily = 60 occurrences).
+    for (int i = 0; i < 60; i++) {
+      await AwesomeNotifications().cancel(_stableHash('${event.id}_occ_$i'));
+    }
   }
 
   Future<void> rescheduleEventReminder(Event oldEvent, Event newEvent) async {
@@ -292,7 +337,7 @@ class NotificationService {
 
   Future<void> showTestNotification() async {
     if (!_initialized) return;
-    final scheduledAt = DateTime.now().add(const Duration(seconds: 5));
+    final at = DateTime.now().add(const Duration(seconds: 5));
     await AwesomeNotifications().createNotification(
       content: NotificationContent(
         id: _idRandom.nextInt(1 << 31),
@@ -302,30 +347,64 @@ class NotificationService {
         notificationLayout: NotificationLayout.Default,
       ),
       schedule: NotificationCalendar(
-        year: scheduledAt.year,
-        month: scheduledAt.month,
-        day: scheduledAt.day,
-        hour: scheduledAt.hour,
-        minute: scheduledAt.minute,
-        second: scheduledAt.second,
-        millisecond: 0,
-        allowWhileIdle: true,
+        year: at.year, month: at.month, day: at.day,
+        hour: at.hour, minute: at.minute, second: at.second,
+        millisecond: 0, allowWhileIdle: true, preciseAlarm: true,
       ),
     );
   }
 
-  DateTime? _reminderTime(Event event) {
-    if (event.reminder == null || event.startTime == null) return null;
-    final start = DateTime(
-      event.date.year,
-      event.date.month,
-      event.date.day,
-      event.startTime!.hour,
-      event.startTime!.minute,
-    );
-    final reminderAt = start.subtract(event.reminder!);
-    if (reminderAt.isBefore(DateTime.now())) return null;
-    return reminderAt;
+  /// Returns reminder DateTimes for every upcoming occurrence of a repeating
+  /// event, up to a frequency-appropriate cap (~1 year ahead).
+  static List<DateTime> _allUpcomingReminderTimes({
+    required DateTime base,
+    required Duration reminder,
+    required RepeatFrequency freq,
+    required List<String> excludedDates,
+    required DateTime now,
+  }) {
+    // How many occurrences to pre-schedule per frequency.
+    final maxCount = switch (freq) {
+      RepeatFrequency.daily     => 60,  // ~2 months
+      RepeatFrequency.weekly    => 52,  // ~1 year
+      RepeatFrequency.biweekly  => 26,  // ~1 year
+      RepeatFrequency.monthly   => 12,  // ~1 year
+      RepeatFrequency.none      => 0,
+    };
+
+    final result = <DateTime>[];
+
+    if (freq == RepeatFrequency.monthly) {
+      for (int i = 0; result.length < maxCount && i < maxCount + 24; i++) {
+        final rawMonth = base.month + i;
+        final occurrence = DateTime(
+          base.year + (rawMonth - 1) ~/ 12,
+          (rawMonth - 1) % 12 + 1,
+          base.day, base.hour, base.minute,
+        );
+        if (excludedDates.contains(_dateKey(occurrence))) continue;
+        final at = occurrence.subtract(reminder);
+        if (at.isAfter(now)) result.add(at);
+      }
+      return result;
+    }
+
+    // Fixed-step (daily / weekly / biweekly).
+    final stepDays = freq == RepeatFrequency.daily ? 1
+        : freq == RepeatFrequency.weekly ? 7 : 14;
+
+    // Jump straight to the first occurrence whose reminder is still future.
+    final threshold = now.add(reminder);
+    final diffSec = threshold.difference(base).inSeconds;
+    final startIdx = diffSec <= 0 ? 0 : (diffSec / (stepDays * 86400)).ceil();
+
+    for (int i = startIdx; result.length < maxCount && i < startIdx + maxCount + 10; i++) {
+      final occurrence = base.add(Duration(days: i * stepDays));
+      if (excludedDates.contains(_dateKey(occurrence))) continue;
+      final at = occurrence.subtract(reminder);
+      if (at.isAfter(now)) result.add(at);
+    }
+    return result;
   }
 
   String _buildBody(Event event) {
@@ -2312,10 +2391,14 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     final totalHours = endHour - startHour + 1;
     final timelineHeight = totalHours * hourHeight;
 
+    // Separate smart task parents — they display as "Due" banners, not in grid.
+    final dueToday = events.where((e) => e.isSmartTask).toList();
+    final timedEvents = events.where((e) => !e.isSmartTask).toList();
+
     final now = DateTime.now();
     final totalMinutes = (endHour - startHour + 1) * 60;
     final eventLayouts = _buildTimedEventLayouts(
-      events,
+      timedEvents,
       startHour: startHour,
       endHour: endHour,
       minimumDurationMinutes: 45,
@@ -2326,7 +2409,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     final nowTop =
         ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight + lineOffset;
 
-    return Container(
+    final timelineWidget = Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF9FBFF),
         borderRadius: BorderRadius.circular(24),
@@ -2566,6 +2649,77 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         ),
       ),
     );
+
+    if (dueToday.isEmpty) return timelineWidget;
+
+    // Show smart-task "Due today" banners above the timeline.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...dueToday.map((task) {
+          final (done, total) = _getSessionProgress(task.id);
+          return GestureDetector(
+            onTap: () => _showEditEventDialog(task),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.deepPurple.shade100),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome_outlined,
+                      color: Colors.deepPurple.shade400, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: Colors.deepPurple.shade800,
+                          ),
+                        ),
+                        Text(
+                          'Due today · $done/$total sessions done',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.deepPurple.shade400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (total > 0)
+                    SizedBox(
+                      width: 60,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: done / total,
+                          minHeight: 6,
+                          backgroundColor: Colors.deepPurple.shade100,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            done == total
+                                ? Colors.green.shade500
+                                : Colors.deepPurple,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }),
+        timelineWidget,
+      ],
+    );
   }
 
   List<_TimedEventLayout> _buildTimedEventLayouts(
@@ -2578,6 +2732,8 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     final layouts = <_TimedEventLayout>[];
 
     for (final event in events) {
+      // Smart task parents have no meaningful time — skip them in the timeline grid.
+      if (event.isSmartTask) continue;
       final start = event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
       final end = event.endTime ??
           TimeOfDay(
@@ -2884,6 +3040,16 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
 
 
   Future<void> _showEditEventDialog(Event oldEvent, {DateTime? occurrenceDate}) async {
+    // Smart task parents get their own editor.
+    if (oldEvent.isSmartTask) {
+      await _showEditSmartTaskDialog(oldEvent);
+      return;
+    }
+    // Work sessions: only allow date + start-time changes, duration is fixed.
+    if (oldEvent.parentTaskId != null) {
+      await _showEditSessionDialog(oldEvent);
+      return;
+    }
     final edited = await showDialog<List<Event>>(
       context: context,
       builder: (_) => EditEventDialog(
@@ -3462,9 +3628,13 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       event.estimatedMinutes != null &&
       event.sessionAdjustedMinutes! > event.estimatedMinutes!;
 
-  final timeLabel = event.hasTimeRange
-      ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
-      : 'All day';
+  final timeLabel = isSmartParent
+      ? 'Due ${DateFormat('EEE, MMM d').format(event.date)}'
+      : isSession && event.startTime != null && effectiveMinutes != null
+          ? '${_formatTimeOfDay(event.startTime!)} · ${_formatDuration(Duration(minutes: effectiveMinutes))}'
+          : event.hasTimeRange
+              ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
+              : 'All day';
 
   final isTask = event.type == EventType.task;
   final isTimeOff = event.type == EventType.timeOff;
@@ -3649,6 +3819,98 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           if (event.description.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(event.description, style: descriptionStyle),
+          ],
+
+          // SMART TASK PROGRESS + SUBMIT
+          if (isSmartParent) ...[
+            const SizedBox(height: 12),
+            Builder(builder: (_) {
+              final (done, total) = _getSessionProgress(event.id);
+              final allDone = total > 0 && done == total;
+              final fraction = total > 0 ? done / total : 0.0;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: fraction,
+                            minHeight: 8,
+                            backgroundColor: Colors.blueGrey[100],
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              allDone ? Colors.green[600]! : Colors.deepPurple,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '$done / $total',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: allDone
+                              ? Colors.green[700]
+                              : Colors.blueGrey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    allDone
+                        ? 'All sessions complete!'
+                        : '$done of $total session${total == 1 ? '' : 's'} complete',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: allDone
+                          ? Colors.green[700]
+                          : Colors.blueGrey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (allDone && !isCompleted) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => _submitSmartTask(event),
+                        icon: const Icon(Icons.send_rounded, size: 16),
+                        label: const Text('Submit Assignment'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green[600],
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          textStyle: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (isCompleted) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 16, color: Colors.green[600]),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Submitted',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green[700],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              );
+            }),
           ],
 
           // TASK TOGGLE under description
@@ -4018,8 +4280,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   }
 
   List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events, {DateTime? targetDate}) {
-    final blockingEvents =
-        events.where((event) => event.type != EventType.note).toList();
+    final blockingEvents = events
+        .where((event) => event.type != EventType.note && !event.isSmartTask)
+        .toList();
 
     final date = targetDate ?? _selectedDate;
     final dayStart = DateTime(
@@ -4195,6 +4458,42 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     unawaited(_persistEvents());
   }
 
+  Future<void> _showEditSmartTaskDialog(Event parent) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AddSmartTaskDialog(
+        selectedDate: parent.date,
+        categories: _categories,
+        // Exclude old sessions so they don't block their own replacement slots.
+        existingEvents: List.unmodifiable(
+            _events.where((e) => e.parentTaskId != parent.id).toList()),
+        dayStartHour: _dayStartHour,
+        dayEndHour: _dayEndHour,
+        existing: parent,
+        onTaskCreated: (updatedParent, newSessions) {
+          setState(() {
+            // Replace the parent task in-place.
+            final i = _events.indexWhere((e) => e.id == parent.id);
+            if (i != -1) _events[i] = updatedParent;
+
+            // Remove all old sessions for this parent, then add the new ones.
+            _events.removeWhere((e) => e.parentTaskId == parent.id);
+            _events.addAll(newSessions);
+          });
+          unawaited(_persistEvents());
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    '"${updatedParent.title}" updated — ${newSessions.length} session${newSessions.length == 1 ? '' : 's'} rescheduled.'),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
   /// Apply carry-forward: for any session that was missed (before today,
   /// incomplete, not yet rolled over), add its time to the next session.
   void _applyCarryForward() {
@@ -4272,6 +4571,7 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
 
   /// Pick up to [k] earliest days per ISO week from [days].
   static List<DateTime> _pickTimesPerWeekDays(List<DateTime> days, int k) {
+    // Group available days by ISO week (Monday-based key).
     final weekMap = <String, List<DateTime>>{};
     for (final day in days) {
       final monday = day.subtract(Duration(days: day.weekday - 1));
@@ -4281,7 +4581,10 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     final result = <DateTime>[];
     for (final weekDays in weekMap.values) {
       weekDays.sort();
-      result.addAll(weekDays.take(k.clamp(1, weekDays.length)));
+      // Use even-interval picking so days are spread across the week,
+      // not all bunched at the start (e.g. Mon+Thu instead of Mon+Tue for k=2).
+      final count = k.clamp(1, weekDays.length);
+      result.addAll(_pickEvenIntervalDays(weekDays, count));
     }
     result.sort();
     return result;
@@ -4451,6 +4754,208 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     return sessions;
   }
 
+  /// Returns (completedSessions, totalSessions) for a smart task parent.
+  (int, int) _getSessionProgress(String parentId) {
+    final sessions =
+        _events.where((e) => e.parentTaskId == parentId).toList();
+    final completed = sessions.where((e) => e.isCompleted).length;
+    return (completed, sessions.length);
+  }
+
+  /// Marks the parent smart task as submitted/completed and archives it.
+  void _submitSmartTask(Event parent) {
+    final index = _events.indexWhere((e) => e.id == parent.id);
+    if (index == -1) return;
+    final completed = parent.copyWith(isCompleted: true);
+    setState(() => _events[index] = completed);
+    unawaited(_persistEvents());
+    _addArchiveEntry(ArchiveEntry.completedTask(completed, parent.date));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('"${parent.title}" submitted! Great work!'),
+        backgroundColor: Colors.green[700],
+      ),
+    );
+  }
+
+  /// Shows a minimal editor for a work session: only date and start time are
+  /// editable; duration is fixed and end time is derived automatically.
+  Future<void> _showEditSessionDialog(Event session) async {
+    DateTime pickedDate = session.date;
+    TimeOfDay pickedTime =
+        session.startTime ?? TimeOfDay(hour: _dayStartHour, minute: 0);
+    final mins = session.estimatedMinutes ?? 30;
+
+    String fmtTOD(TimeOfDay t) {
+      final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+      final m = t.minute.toString().padLeft(2, '0');
+      final p = t.period == DayPeriod.am ? 'AM' : 'PM';
+      return '$h:$m $p';
+    }
+
+    String fmtDate(DateTime d) => DateFormat('EEE, MMM d').format(d);
+
+    String fmtDur(int m) {
+      final h = m ~/ 60, r = m % 60;
+      if (h > 0 && r > 0) return '${h}h ${r}m';
+      if (h > 0) return '${h}h';
+      return '${r}m';
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final endMin = pickedTime.hour * 60 + pickedTime.minute + mins;
+          final endTOD = TimeOfDay(
+              hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(Icons.timer_outlined,
+                    color: Colors.deepPurple.shade400, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    session.title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Duration — read-only
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.hourglass_bottom_outlined,
+                          size: 16, color: Colors.deepPurple.shade400),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Duration: ${fmtDur(mins)}  (fixed)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.deepPurple.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Date row
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.calendar_today_outlined,
+                      color: Colors.blueGrey[500], size: 20),
+                  title: const Text('Date',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  trailing: Text(fmtDate(pickedDate),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  onTap: () async {
+                    final now = DateTime.now();
+                    final d = await showDatePicker(
+                      context: ctx,
+                      initialDate: pickedDate.isBefore(now) ? now : pickedDate,
+                      firstDate: now,
+                      lastDate: now.add(const Duration(days: 365)),
+                    );
+                    if (d != null) setLocal(() => pickedDate = d);
+                  },
+                ),
+                const Divider(height: 1),
+                // Start time row
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.access_time_outlined,
+                      color: Colors.blueGrey[500], size: 20),
+                  title: const Text('Start time',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  trailing: Text(fmtTOD(pickedTime),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  onTap: () async {
+                    final t = await showTimePicker(
+                        context: ctx, initialTime: pickedTime);
+                    if (t != null) setLocal(() => pickedTime = t);
+                  },
+                ),
+                const Divider(height: 1),
+                // Computed end time — read-only
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.flag_outlined,
+                      color: Colors.blueGrey[400], size: 20),
+                  title: Text('Ends at',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blueGrey[500])),
+                  trailing: Text(fmtTOD(endTOD),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: Colors.blueGrey[500])),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                style: FilledButton.styleFrom(
+                    backgroundColor: Colors.deepPurple),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+
+    // Compute new end time from fixed duration + new start time.
+    final endMin = pickedTime.hour * 60 + pickedTime.minute + mins;
+    final newEnd = TimeOfDay(
+        hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+
+    final updated = session.copyWith(
+      date: pickedDate,
+      startTime: pickedTime,
+      endTime: newEnd,
+    );
+
+    // Replace by ID — never by object reference — to avoid duplicates.
+    final idx = _events.indexWhere((e) => e.id == session.id);
+    if (idx != -1) {
+      setState(() => _events[idx] = updated);
+      unawaited(_persistEvents());
+      unawaited(NotificationService.instance.rescheduleEventReminder(session, updated));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session updated.')),
+        );
+      }
+    }
+  }
+
   // ── End smart task helpers ────────────────────────────────────────────────
 
   void _toggleTaskCompletion(Event event, DateTime occurrenceDate) {
@@ -4500,6 +5005,167 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   }
 
   void _confirmDelete(Event event, {DateTime? occurrenceDate}) {
+    // ── Smart task parent: delete parent + all sessions ───────────────────────
+    if (event.isSmartTask) {
+      final sessions = _events.where((e) => e.parentTaskId == event.id).toList();
+      final count = sessions.length;
+      showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Delete Smart Task'),
+          content: Text(
+            'Delete "${event.title}" and all $count work session${count == 1 ? '' : 's'}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete all', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
+        ),
+      ).then((confirmed) {
+        if (confirmed != true || !mounted) return;
+        final allToDelete = [event, ...sessions];
+        final archiveEntry = ArchiveEntry.deletedEvent(event);
+        setState(() {
+          _events.removeWhere((e) => e.id == event.id || e.parentTaskId == event.id);
+          if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+        });
+        unawaited(_persistEvents());
+        unawaited(_saveArchive());
+        for (final e in allToDelete) {
+          unawaited(NotificationService.instance.cancelEventReminder(e));
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${event.title}" and all sessions deleted'),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () {
+                if (!mounted) return;
+                setState(() {
+                  _events.addAll(allToDelete);
+                  _archiveEntries.removeWhere(
+                    (e) => _isSameArchiveEntry(e, archiveEntry),
+                  );
+                });
+                unawaited(_persistEvents());
+                unawaited(_saveArchive());
+                for (final e in allToDelete) {
+                  unawaited(NotificationService.instance.scheduleEventReminder(e));
+                }
+              },
+            ),
+          ),
+        );
+      });
+      return;
+    }
+
+    // ── Work session: offer "this session" vs "entire task" ──────────────────
+    if (event.parentTaskId != null) {
+      final parentId = event.parentTaskId!;
+      showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Delete Session'),
+          content: const Text(
+            'Delete just this work session, or cancel the entire task and all its sessions?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('one'),
+              child: const Text('This session', style: TextStyle(color: Colors.redAccent)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('all'),
+              child: const Text('Entire task', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
+        ),
+      ).then((choice) {
+        if (choice == null || !mounted) return;
+        if (choice == 'one') {
+          // Remove just this session.
+          final archiveEntry = ArchiveEntry.deletedEvent(event);
+          setState(() {
+            _events.removeWhere((e) => e.id == event.id);
+            if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+          });
+          unawaited(_persistEvents());
+          unawaited(_saveArchive());
+          unawaited(NotificationService.instance.cancelEventReminder(event));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Session deleted'),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () {
+                  if (!mounted) return;
+                  setState(() {
+                    _events.add(event);
+                    _archiveEntries.removeWhere((e) => _isSameArchiveEntry(e, archiveEntry));
+                  });
+                  unawaited(_persistEvents());
+                  unawaited(_saveArchive());
+                  unawaited(NotificationService.instance.scheduleEventReminder(event));
+                },
+              ),
+            ),
+          );
+        } else {
+          // Remove parent + all sessions.
+          final parent = _events.firstWhere(
+            (e) => e.id == parentId,
+            orElse: () => event,
+          );
+          final allToDelete = _events
+              .where((e) => e.id == parentId || e.parentTaskId == parentId)
+              .toList();
+          final archiveEntry = ArchiveEntry.deletedEvent(parent);
+          setState(() {
+            _events.removeWhere((e) => e.id == parentId || e.parentTaskId == parentId);
+            if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+          });
+          unawaited(_persistEvents());
+          unawaited(_saveArchive());
+          for (final e in allToDelete) {
+            unawaited(NotificationService.instance.cancelEventReminder(e));
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('"${parent.title}" and all sessions deleted'),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () {
+                  if (!mounted) return;
+                  setState(() {
+                    _events.addAll(allToDelete);
+                    _archiveEntries.removeWhere((e) => _isSameArchiveEntry(e, archiveEntry));
+                  });
+                  unawaited(_persistEvents());
+                  unawaited(_saveArchive());
+                  for (final e in allToDelete) {
+                    unawaited(NotificationService.instance.scheduleEventReminder(e));
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      });
+      return;
+    }
+
+    // ── Standard recurring event ──────────────────────────────────────────────
     final isRecurring = event.repeatFrequency != RepeatFrequency.none;
 
     if (isRecurring && occurrenceDate != null) {
