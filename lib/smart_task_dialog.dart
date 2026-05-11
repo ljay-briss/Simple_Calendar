@@ -19,6 +19,7 @@ class AddSmartTaskDialog extends StatefulWidget {
     required this.dayEndHour,
     required this.onTaskCreated,
     this.existing, // non-null = edit mode
+    this.onDelete,
   });
 
   final DateTime selectedDate;
@@ -29,6 +30,8 @@ class AddSmartTaskDialog extends StatefulWidget {
   final void Function(Event parent, List<Event> sessions) onTaskCreated;
   /// The parent smart-task being edited (null = create mode).
   final Event? existing;
+  /// Called when the user requests deletion of the task (edit mode only).
+  final VoidCallback? onDelete;
 
   @override
   State<AddSmartTaskDialog> createState() => _AddSmartTaskDialogState();
@@ -43,6 +46,7 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
 
   // Step 1
   late DateTime _dueDate;
+  TimeOfDay? _dueTime; // optional specific time the assignment is due
 
   // Step 1 – duration controllers (must live in state so they aren't recreated on rebuild)
   final _hoursCtrl = TextEditingController(text: '1');
@@ -91,6 +95,7 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
       );
       _workDaysCount = ex.workDaysCount ?? 5;
       _reminder = ex.reminder;
+      _dueTime = ex.startTime;
     } else {
       _category =
           widget.categories.isNotEmpty ? widget.categories.first : 'General';
@@ -153,6 +158,7 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
       isSmartTask: true,
       isPinned: widget.existing?.isPinned ?? false,
       isImportant: widget.existing?.isImportant ?? false,
+      startTime: _dueTime,
       estimatedMinutes: _totalWorkMinutes,
       workScheduleType: _scheduleType.name,
       workDaysCount: _workDaysCount,
@@ -431,6 +437,16 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
                   fontWeight: FontWeight.w800, fontSize: 18),
             ),
           ),
+          if (isEdit && widget.onDelete != null)
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: Colors.red[400]),
+              tooltip: 'Delete task',
+              onPressed: () {
+                Navigator.of(context).pop();
+                widget.onDelete!();
+              },
+              visualDensity: VisualDensity.compact,
+            ),
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () => Navigator.of(context).pop(),
@@ -623,6 +639,47 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
           ),
         ),
         const SizedBox(height: 16),
+        _sectionLabel('Due time (optional)'),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _pickDueTime,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F8FA),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blueGrey.shade100),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.access_time_outlined,
+                    color: Colors.blueGrey[400], size: 18),
+                const SizedBox(width: 10),
+                Text(
+                  _dueTime != null ? _fmtTOD(_dueTime!) : 'No specific time',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: _dueTime != null
+                        ? Colors.blueGrey[800]
+                        : Colors.blueGrey[400],
+                  ),
+                ),
+                const Spacer(),
+                if (_dueTime != null)
+                  GestureDetector(
+                    onTap: () => setState(() => _dueTime = null),
+                    child: Icon(Icons.close,
+                        size: 16, color: Colors.blueGrey[400]),
+                  )
+                else
+                  Icon(Icons.edit_outlined,
+                      size: 16, color: Colors.blueGrey[400]),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         _sectionLabel('Total work time'),
         const SizedBox(height: 8),
         Row(
@@ -736,6 +793,15 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
     if (picked != null) setState(() => _dueDate = picked);
+  }
+
+  Future<void> _pickDueTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _dueTime ?? const TimeOfDay(hour: 23, minute: 59),
+      helpText: 'Select due time',
+    );
+    if (picked != null) setState(() => _dueTime = picked);
   }
 
   // ── Step 2: Schedule ────────────────────────────────────────────────────────
@@ -1149,8 +1215,9 @@ class _AddSmartTaskDialogState extends State<AddSmartTaskDialog> {
         const SizedBox(height: 8),
         _infoBox(
           Icons.info_outline,
-          'Due date: ${_fmtDate(_dueDate)}  ·  '
-          'Total: ${_fmtDuration(_totalWorkMinutes)}'
+          'Due: ${_fmtDate(_dueDate)}'
+          '${_dueTime != null ? ' at ${_fmtTOD(_dueTime!)}' : ''}'
+          '  ·  Total: ${_fmtDuration(_totalWorkMinutes)}'
           '${_reminder != null ? '  ·  Reminder: ${reminderLabelFromDuration(_reminder)}' : ''}',
         ),
         const SizedBox(height: 16),

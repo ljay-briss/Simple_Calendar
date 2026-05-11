@@ -375,14 +375,19 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   }
 
   String _serializeLines() {
-    return _lines
-        .where((line) => line.controller.text.trim().isNotEmpty || line.isChecklist)
-        .map((line) {
-          final text = line.controller.text;
-          if (!line.isChecklist) return text;
-          return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
-        })
-        .join('\n');
+    final serialized = _lines.map((line) {
+      final text = line.controller.text;
+      if (!line.isChecklist) return text;
+      return '[${line.isChecked ? 'x' : ' '}] ${text.trim()}';
+    }).toList();
+
+    // Only strip trailing blank lines so the saved content stays tidy,
+    // but preserve all blank lines in the middle of the note.
+    while (serialized.isNotEmpty && serialized.last.trim().isEmpty) {
+      serialized.removeLast();
+    }
+
+    return serialized.join('\n');
   }
 
   void _clearLines() {
