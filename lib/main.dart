@@ -1208,6 +1208,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   HomeTab _currentTab = HomeTab.calendar;
   _ScheduleView _currentScheduleView = _ScheduleView.daily;
   _WeeklyTab _currentWeeklyTab = _WeeklyTab.schedule;
+  String? _draggingEventId;
+  double _dragDeltaX = 0;
+  double _dragDeltaY = 0;
 
   // Local persistence keys and cache handle for SharedPreferences.
   SharedPreferences? _cachedPrefs;
@@ -2337,6 +2340,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           // events — snapped to the visible grid lines
           for (int dayIndex = 0; dayIndex < 7; dayIndex++)
             ...dayLayouts[dayIndex]!.map((layout) {
+              final isDragging = _draggingEventId == layout.event.id;
               final top =
                   ((layout.startMinutes / 60) * hourHeight) + lineOffset;
               final minHeight = hourHeight * 0.25;
@@ -2364,39 +2368,61 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       layout.event,
                       occurrenceDate: days[dayIndex],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          layout.event.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.blue[800],
-                            fontWeight: FontWeight.w700,
-                            fontSize: 10,
+                    onLongPressStart: (_) => _startEventDrag(layout.event),
+                    onLongPressMoveUpdate: _updateEventDragFromLongPress,
+                    onLongPressEnd: (_) => _finishEventDrag(
+                      event: layout.event,
+                      layoutStart: layout.startTime,
+                      layoutEnd: layout.endTime,
+                      startHour: startHour,
+                      endHour: endHour,
+                      hourHeight: hourHeight,
+                      targetDate: days[dayIndex],
+                      dayWidth: dayWidth,
+                    ),
+                    onLongPressCancel: () => setState(() {
+                      _draggingEventId = null;
+                      _dragDeltaX = 0;
+                      _dragDeltaY = 0;
+                    }),
+                    child: Transform.translate(
+                      offset: isDragging
+                          ? Offset(_dragDeltaX, _dragDeltaY)
+                          : Offset.zero,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            layout.event.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.blue[800],
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                            ),
                           ),
-                        ),
-                        Row(
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: Colors.blue[600],
-                                shape: BoxShape.circle,
+                          Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[600],
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 1.5,
-                                color: Colors.blue[400],
+                              Expanded(
+                                child: Container(
+                                  height: 1.5,
+                                  color: Colors.blue[400],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -2407,10 +2433,38 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 left: left,
                 width: columnWidth,
                 height: height,
-                child: _buildWeeklyEventBlock(
-                  layout.event,
-                  layout.startTime,
-                  layout.endTime,
+                child: GestureDetector(
+                  onTap: () => _showEditEventDialog(
+                    layout.event,
+                    occurrenceDate: days[dayIndex],
+                  ),
+                  onLongPressStart: (_) => _startEventDrag(layout.event),
+                  onLongPressMoveUpdate: _updateEventDragFromLongPress,
+                  onLongPressEnd: (_) => _finishEventDrag(
+                    event: layout.event,
+                    layoutStart: layout.startTime,
+                    layoutEnd: layout.endTime,
+                    startHour: startHour,
+                    endHour: endHour,
+                    hourHeight: hourHeight,
+                    targetDate: days[dayIndex],
+                    dayWidth: dayWidth,
+                  ),
+                  onLongPressCancel: () => setState(() {
+                    _draggingEventId = null;
+                    _dragDeltaX = 0;
+                    _dragDeltaY = 0;
+                  }),
+                  child: Transform.translate(
+                    offset: isDragging
+                        ? Offset(_dragDeltaX, _dragDeltaY)
+                        : Offset.zero,
+                    child: _buildWeeklyEventBlock(
+                      layout.event,
+                      layout.startTime,
+                      layout.endTime,
+                    ),
+                  ),
                 ),
               );
             }),
@@ -2712,6 +2766,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 }),
               ),
               ...eventLayouts.map((layout) {
+                final isDragging = _draggingEventId == layout.event.id;
                 final top =
                     (layout.startMinutes / 60) * hourHeight + lineOffset;
                 final height =
@@ -2744,45 +2799,66 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         layout.event,
                         occurrenceDate: _selectedDate,
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: Colors.blue[600],
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          Expanded(
-                            child: Container(
-                              height: 2,
-                              color: Colors.blue[400],
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              layout.event.title,
-                              style: TextStyle(
-                                color: Colors.blue[800],
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
+                      onLongPressStart: (_) => _startEventDrag(layout.event),
+                      onLongPressMoveUpdate: _updateEventDragFromLongPress,
+                      onLongPressEnd: (_) => _finishEventDrag(
+                        event: layout.event,
+                        layoutStart: layout.startTime,
+                        layoutEnd: layout.endTime,
+                        startHour: startHour,
+                        endHour: endHour,
+                        hourHeight: hourHeight,
+                        targetDate: _selectedDate,
+                      ),
+                      onLongPressCancel: () => setState(() {
+                        _draggingEventId = null;
+                        _dragDeltaX = 0;
+                        _dragDeltaY = 0;
+                      }),
+                      child: Transform.translate(
+                        offset: isDragging
+                            ? Offset(0, _dragDeltaY)
+                            : Offset.zero,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: Colors.blue[600],
+                                shape: BoxShape.circle,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            layout.event.category,
-                            style: TextStyle(
-                              color: Colors.blueGrey[500],
-                              fontSize: 11,
+                            Expanded(
+                              child: Container(
+                                height: 2,
+                                color: Colors.blue[400],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                layout.event.title,
+                                style: TextStyle(
+                                  color: Colors.blue[800],
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              layout.event.category,
+                              style: TextStyle(
+                                color: Colors.blueGrey[500],
+                                fontSize: 11,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -2794,119 +2870,152 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   child: SizedBox(
                     width: blockWidth,
                     height: visualHeight,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _showEditEventDialog(
-                          layout.event,
-                          occurrenceDate: _selectedDate,
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isCompact =
-                                constraints.maxHeight <= minEventHeight + 0.1;
-                            final verticalPadding = isCompact ? 6.0 : 8.0;
-                            final betweenTitleAndCategory = isCompact
-                                ? 4.0
-                                : 6.0;
-                            final betweenCategoryAndTime = isCompact
-                                ? 2.0
-                                : 4.0;
+                    child: GestureDetector(
+                      onLongPressStart: (_) => _startEventDrag(layout.event),
+                      onLongPressMoveUpdate: _updateEventDragFromLongPress,
+                      onLongPressEnd: (_) => _finishEventDrag(
+                        event: layout.event,
+                        layoutStart: layout.startTime,
+                        layoutEnd: layout.endTime,
+                        startHour: startHour,
+                        endHour: endHour,
+                        hourHeight: hourHeight,
+                        targetDate: _selectedDate,
+                      ),
+                      onLongPressCancel: () => setState(() {
+                        _draggingEventId = null;
+                        _dragDeltaX = 0;
+                        _dragDeltaY = 0;
+                      }),
+                      child: Transform.translate(
+                        offset: isDragging
+                            ? Offset(0, _dragDeltaY)
+                            : Offset.zero,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _showEditEventDialog(
+                              layout.event,
+                              occurrenceDate: _selectedDate,
+                            ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final isCompact =
+                                    constraints.maxHeight <=
+                                    minEventHeight + 0.1;
+                                final verticalPadding = isCompact ? 6.0 : 8.0;
+                                final betweenTitleAndCategory = isCompact
+                                    ? 4.0
+                                    : 6.0;
+                                final betweenCategoryAndTime = isCompact
+                                    ? 2.0
+                                    : 4.0;
 
-                            return DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF3FF),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFFD7E2F8),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: verticalPadding,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.max,
-                                  children: [
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxHeight: 28,
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Flexible(
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 5,
+                                return DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF3FF),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFFD7E2F8),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: verticalPadding,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.max,
+                                      children: [
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxHeight: 28,
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 5,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
                                                   ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
-                                              child: Text(
-                                                layout.event.title,
-                                                style: TextStyle(
-                                                  color: Colors.blue[800],
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 11,
+                                                  child: Text(
+                                                    layout.event.title,
+                                                    style: TextStyle(
+                                                      color: Colors.blue[800],
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 11,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
                                                 ),
-                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                            ),
+                                              const SizedBox(width: 8),
+                                              Icon(
+                                                _iconForEventType(
+                                                  layout.event.type,
+                                                ),
+                                                size: 16,
+                                                color: Colors.blue[700],
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(width: 8),
-                                          Icon(
-                                            _iconForEventType(
-                                              layout.event.type,
-                                            ),
-                                            size: 16,
-                                            color: Colors.blue[700],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    SizedBox(height: betweenTitleAndCategory),
-                                    Flexible(
-                                      fit: FlexFit.tight,
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          layout.event.category,
-                                          style: TextStyle(
-                                            color: Colors.blueGrey[900],
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14,
-                                          ),
-                                          maxLines: isCompact ? 1 : 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          softWrap: true,
                                         ),
-                                      ),
+                                        SizedBox(
+                                          height: betweenTitleAndCategory,
+                                        ),
+                                        Flexible(
+                                          fit: FlexFit.tight,
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              layout.event.category,
+                                              style: TextStyle(
+                                                color: Colors.blueGrey[900],
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                              maxLines: isCompact ? 1 : 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              softWrap: true,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          height: betweenCategoryAndTime,
+                                        ),
+                                        Text(
+                                          _formatEventTimeRange(
+                                            layout.startTime,
+                                            layout.endTime,
+                                          ),
+                                          style: TextStyle(
+                                            color: Colors.blueGrey[500],
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    SizedBox(height: betweenCategoryAndTime),
-                                    Text(
-                                      _formatEventTimeRange(
-                                        layout.startTime,
-                                        layout.endTime,
-                                      ),
-                                      style: TextStyle(
-                                        color: Colors.blueGrey[500],
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -3436,6 +3545,115 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
     if (!mounted || updated == null) return;
     _handleCategoriesUpdated(_normalizeCategories(updated));
+  }
+
+  int _snapToGridMinutes(int minutes, {int step = 15}) {
+    return ((minutes / step).round() * step);
+  }
+
+  TimeOfDay _timeOfDayFromMinutes(int minutes) {
+    final clamped = minutes.clamp(0, (23 * 60) + 59);
+    return TimeOfDay(hour: clamped ~/ 60, minute: clamped % 60);
+  }
+
+  int _durationMinutesForDrag(Event event, TimeOfDay start, TimeOfDay end) {
+    final startMinutes = start.hour * 60 + start.minute;
+    final endMinutes = end.hour * 60 + end.minute;
+    final timedDuration = endMinutes - startMinutes;
+    if (timedDuration > 0) return timedDuration;
+    return (event.estimatedMinutes ?? 0).clamp(0, 24 * 60);
+  }
+
+  void _startEventDrag(Event event) {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _draggingEventId = event.id;
+      _dragDeltaX = 0;
+      _dragDeltaY = 0;
+    });
+  }
+
+  void _updateEventDragFromLongPress(LongPressMoveUpdateDetails details) {
+    setState(() {
+      // offsetFromOrigin is the absolute offset from where the drag started,
+      // so we assign rather than accumulate.
+      _dragDeltaX = details.offsetFromOrigin.dx;
+      _dragDeltaY = details.offsetFromOrigin.dy;
+    });
+  }
+
+  Future<void> _finishEventDrag({
+    required Event event,
+    required TimeOfDay layoutStart,
+    required TimeOfDay layoutEnd,
+    required int startHour,
+    required int endHour,
+    required double hourHeight,
+    DateTime? targetDate,
+    double? dayWidth,
+  }) async {
+    final deltaX = _dragDeltaX;
+    final deltaY = _dragDeltaY;
+    setState(() {
+      _draggingEventId = null;
+      _dragDeltaX = 0;
+      _dragDeltaY = 0;
+    });
+
+    final totalMinutes = (endHour - startHour + 1) * 60;
+    final deltaMinutes = _snapToGridMinutes((deltaY / hourHeight * 60).round());
+    final originalStartMinutes =
+        ((layoutStart.hour - startHour) * 60) + layoutStart.minute;
+    final durationMinutes = _durationMinutesForDrag(
+      event,
+      layoutStart,
+      layoutEnd,
+    );
+    final maxStart = math.max(0, totalMinutes - math.max(1, durationMinutes));
+    final newStartFromGrid =
+        (originalStartMinutes + deltaMinutes).clamp(0, maxStart) as int;
+    final newStartAbsoluteMinutes = (startHour * 60) + newStartFromGrid;
+    final newEndAbsoluteMinutes = newStartAbsoluteMinutes + durationMinutes;
+
+    var newDate = targetDate ?? event.date;
+    if (dayWidth != null && dayWidth > 0 && targetDate != null) {
+      final dayOffset = (deltaX / dayWidth).round();
+      newDate = targetDate.add(Duration(days: dayOffset));
+    }
+
+    final isRegularTask =
+        event.type == EventType.task && event.parentTaskId == null;
+    final updated = isRegularTask
+        ? event.copyWith(
+            date: newDate,
+            startTime: _timeOfDayFromMinutes(newEndAbsoluteMinutes),
+          )
+        : event.copyWith(
+            date: newDate,
+            startTime: _timeOfDayFromMinutes(newStartAbsoluteMinutes),
+            endTime: durationMinutes > 0
+                ? _timeOfDayFromMinutes(newEndAbsoluteMinutes)
+                : event.endTime,
+          );
+
+    if (updated.date == event.date &&
+        updated.startTime == event.startTime &&
+        updated.endTime == event.endTime) {
+      return;
+    }
+
+    final index = _events.indexWhere((e) => e.id == event.id);
+    if (index == -1) return;
+    setState(() {
+      _events[index] = updated;
+      if (targetDate != null) {
+        _selectedDate = newDate;
+      }
+    });
+    unawaited(_persistEvents());
+    unawaited(
+      NotificationService.instance.rescheduleEventReminder(event, updated),
+    );
   }
 
   Future<void> _showEditEventDialog(
@@ -5548,8 +5766,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final archiveEntry = ArchiveEntry.deletedSmartTaskSession(session);
     setState(() {
       _events.removeWhere((e) => e.id == session.id);
-      if (!_hasArchiveEntry(archiveEntry))
+      if (!_hasArchiveEntry(archiveEntry)) {
         _archiveEntries.insert(0, archiveEntry);
+      }
     });
     unawaited(_persistEvents());
     unawaited(_saveArchive());
@@ -5833,8 +6052,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           final archiveEntry = ArchiveEntry.deletedSmartTaskSession(event);
           setState(() {
             _events.removeWhere((e) => e.id == event.id);
-            if (!_hasArchiveEntry(archiveEntry))
+            if (!_hasArchiveEntry(archiveEntry)) {
               _archiveEntries.insert(0, archiveEntry);
+            }
           });
           unawaited(_persistEvents());
           unawaited(_saveArchive());
@@ -6784,8 +7004,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           TextField(
                             controller: _titleController,
                             onChanged: (_) {
-                              if (_saveError != null)
+                              if (_saveError != null) {
                                 setState(() => _saveError = null);
+                              }
                             },
                             decoration: _sharedInputDecoration(
                               label: 'Name *',
@@ -7605,8 +7826,9 @@ class _EditEventDialogState extends State<EditEventDialog> {
                           TextField(
                             controller: _title,
                             onChanged: (_) {
-                              if (_saveError != null)
+                              if (_saveError != null) {
                                 setState(() => _saveError = null);
+                              }
                             },
                             decoration: _sharedInputDecoration(
                               label: 'Name *',
@@ -8781,10 +9003,12 @@ _DateQuery? _parseDateQueryLoose(String input) {
     final a = int.parse(mdM.group(1)!);
     final b = int.parse(mdM.group(2)!);
     // Try MM/DD first, then DD/MM
-    if (_safeDate(now.year, a, b) != null)
+    if (_safeDate(now.year, a, b) != null) {
       return _DateQuery(year: now.year, month: a, day: b);
-    if (_safeDate(now.year, b, a) != null)
+    }
+    if (_safeDate(now.year, b, a) != null) {
       return _DateQuery(year: now.year, month: b, day: a);
+    }
   }
 
   // 4) Month-name (prefix) forms like "sep", "sept 2", "september 2025", "2 sep 2025"
@@ -8845,8 +9069,9 @@ _DateQuery? _parseDateQueryLoose(String input) {
       final mB = pickMonthPrefix(tokens[1]);
       if (mA != null && RegExp(r'^\d{1,2}$').hasMatch(tokens[1])) {
         final d = int.parse(tokens[1]);
-        if (_safeDate(now.year, mA, d) != null)
+        if (_safeDate(now.year, mA, d) != null) {
           return _DateQuery(year: now.year, month: mA, day: d);
+        }
       }
       if (mA != null && RegExp(r'^\d{4}$').hasMatch(tokens[1])) {
         final y = int.parse(tokens[1]);
@@ -8854,8 +9079,9 @@ _DateQuery? _parseDateQueryLoose(String input) {
       }
       if (RegExp(r'^\d{1,2}$').hasMatch(tokens[0]) && mB != null) {
         final d = int.parse(tokens[0]);
-        if (_safeDate(now.year, mB, d) != null)
+        if (_safeDate(now.year, mB, d) != null) {
           return _DateQuery(year: now.year, month: mB, day: d);
+        }
       }
     } else if (tokens.length >= 3) {
       // e.g., "sep 2 2025", "2 sep 2025"
@@ -10258,6 +10484,11 @@ class _ArchivePageState extends State<ArchivePage> {
   List<NoteEntry> _notes = const [];
   List<ArchiveEntry> _archiveEntries = const [];
 
+  // Section collapse state — all expanded by default.
+  bool _deletedExpanded = true;
+  bool _completedExpanded = true;
+  bool _pastExpanded = true;
+
   @override
   void initState() {
     super.initState();
@@ -10550,87 +10781,184 @@ class _ArchivePageState extends State<ArchivePage> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
-                  _buildSectionTitle('Deleted'),
-                  if (deleted.isEmpty)
-                    _buildEmptyState('No deleted items yet.')
-                  else
-                    ...deleted.map(
-                      (entry) => _buildArchiveTile(
-                        card: card,
-                        border: border,
-                        icon: _iconForArchiveEntry(entry),
-                        title: _titleForArchiveEntry(entry),
-                        subtitle: _subtitleForArchiveEntry(
-                          entry,
-                          entry.reason == kArchiveReasonOccurrenceDeleted
-                              ? 'Occurrence Deleted'
-                              : 'Deleted',
-                        ),
-                        trailing: _buildArchiveAction(
-                          label: 'Restore',
-                          onTap: () =>
+                  _buildCollapsibleSection(
+                    title: 'Deleted',
+                    icon: Icons.delete_outline_rounded,
+                    count: deleted.length,
+                    expanded: _deletedExpanded,
+                    onToggle: () =>
+                        setState(() => _deletedExpanded = !_deletedExpanded),
+                    emptyMessage: 'No deleted items yet.',
+                    card: card,
+                    border: border,
+                    children: deleted
+                        .map(
+                          (entry) => _buildArchiveTile(
+                            card: card,
+                            border: border,
+                            icon: _iconForArchiveEntry(entry),
+                            title: _titleForArchiveEntry(entry),
+                            subtitle: _subtitleForArchiveEntry(
+                              entry,
                               entry.reason == kArchiveReasonOccurrenceDeleted
-                              ? _restoreOccurrenceEntry(entry)
-                              : _restoreDeletedEntry(entry),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 18),
-                  _buildSectionTitle('Completed'),
-                  if (completed.isEmpty)
-                    _buildEmptyState('No completed items yet.')
-                  else
-                    ...completed.map(
-                      (entry) => _buildArchiveTile(
-                        card: card,
-                        border: border,
-                        icon: _iconForArchiveEntry(entry),
-                        title: _titleForArchiveEntry(entry),
-                        subtitle: _subtitleForArchiveEntry(entry, 'Completed'),
-                        trailing: _buildArchiveAction(
-                          label: 'Unarchive',
-                          onTap: () => _restoreCompletedEntry(entry),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 18),
-                  _buildSectionTitle('Past'),
-                  if (past.isEmpty)
-                    _buildEmptyState('No past items yet.')
-                  else
-                    ...past.map(
-                      (event) => _buildArchiveTile(
-                        card: card,
-                        border: border,
-                        icon: _iconForEvent(event),
-                        title: event.title.isEmpty ? 'Untitled' : event.title,
-                        subtitle: _subtitleForPastEvent(event),
-                      ),
-                    ),
+                                  ? 'Occurrence Deleted'
+                                  : 'Deleted',
+                            ),
+                            trailing: _buildArchiveAction(
+                              label: 'Restore',
+                              onTap: () =>
+                                  entry.reason ==
+                                          kArchiveReasonOccurrenceDeleted
+                                      ? _restoreOccurrenceEntry(entry)
+                                      : _restoreDeletedEntry(entry),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildCollapsibleSection(
+                    title: 'Completed',
+                    icon: Icons.check_circle_outline_rounded,
+                    count: completed.length,
+                    expanded: _completedExpanded,
+                    onToggle: () => setState(
+                        () => _completedExpanded = !_completedExpanded),
+                    emptyMessage: 'No completed items yet.',
+                    card: card,
+                    border: border,
+                    children: completed
+                        .map(
+                          (entry) => _buildArchiveTile(
+                            card: card,
+                            border: border,
+                            icon: _iconForArchiveEntry(entry),
+                            title: _titleForArchiveEntry(entry),
+                            subtitle:
+                                _subtitleForArchiveEntry(entry, 'Completed'),
+                            trailing: _buildArchiveAction(
+                              label: 'Unarchive',
+                              onTap: () => _restoreCompletedEntry(entry),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildCollapsibleSection(
+                    title: 'Past',
+                    icon: Icons.history_rounded,
+                    count: past.length,
+                    expanded: _pastExpanded,
+                    onToggle: () =>
+                        setState(() => _pastExpanded = !_pastExpanded),
+                    emptyMessage: 'No past items yet.',
+                    card: card,
+                    border: border,
+                    children: past
+                        .map(
+                          (event) => _buildArchiveTile(
+                            card: card,
+                            border: border,
+                            icon: _iconForEvent(event),
+                            title: event.title.isEmpty
+                                ? 'Untitled'
+                                : event.title,
+                            subtitle: _subtitleForPastEvent(event),
+                          ),
+                        )
+                        .toList(),
+                  ),
                 ],
               ),
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: Colors.blueGrey[700],
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
+  Widget _buildCollapsibleSection({
+    required String title,
+    required IconData icon,
+    required int count,
+    required bool expanded,
+    required VoidCallback onToggle,
+    required String emptyMessage,
+    required Color card,
+    required Color border,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: Colors.blueGrey[600]),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: Colors.blueGrey[800],
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey[100],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.blueGrey[600],
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: expanded ? 0 : -0.25,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.expand_more_rounded,
+                    color: Colors.blueGrey[500],
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(String message) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(message, style: TextStyle(color: Colors.blueGrey[400])),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 220),
+          crossFadeState:
+              expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          firstChild: children.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 12, top: 4),
+                  child: Text(
+                    emptyMessage,
+                    style: TextStyle(color: Colors.blueGrey[400]),
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 6),
+                    ...children,
+                  ],
+                ),
+          secondChild: const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 
