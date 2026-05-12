@@ -69,7 +69,6 @@ enum _WeeklyTab { schedule, freeTime }
 // Context menu actions for notes folders.
 enum _FolderAction { pin, delete }
 
-
 // Standard reminder presets offered in the event editor.
 const Map<String, Duration?> kReminderOptions = <String, Duration?>{
   'No reminder': null,
@@ -184,7 +183,8 @@ String reminderLabelFromDuration(Duration? duration) {
     if (option == null && duration == null) {
       return entry.key;
     }
-    if (option != null && duration != null &&
+    if (option != null &&
+        duration != null &&
         option.inMinutes == duration.inMinutes) {
       return entry.key;
     }
@@ -220,19 +220,16 @@ class NotificationService {
 
   Future<void> init() async {
     if (_initialized) return;
-    AwesomeNotifications().initialize(
-      null,
-      [
-        NotificationChannel(
-          channelKey: _channelKey,
-          channelName: _channelName,
-          channelDescription: _channelDescription,
-          importance: NotificationImportance.High,
-          defaultColor: const Color(0xFF3B82F6),
-          ledColor: Colors.white,
-        ),
-      ],
-    );
+    AwesomeNotifications().initialize(null, [
+      NotificationChannel(
+        channelKey: _channelKey,
+        channelName: _channelName,
+        channelDescription: _channelDescription,
+        importance: NotificationImportance.High,
+        defaultColor: const Color(0xFF3B82F6),
+        ledColor: Colors.white,
+      ),
+    ]);
     await _requestPermissions();
     _initialized = true;
   }
@@ -261,8 +258,11 @@ class NotificationService {
     if (event.reminder == null || event.startTime == null) return;
 
     final base = DateTime(
-      event.date.year, event.date.month, event.date.day,
-      event.startTime!.hour, event.startTime!.minute,
+      event.date.year,
+      event.date.month,
+      event.date.day,
+      event.startTime!.hour,
+      event.startTime!.minute,
     );
     final now = DateTime.now();
 
@@ -270,7 +270,8 @@ class NotificationService {
       // For regular tasks with a duration, fire at the start of the work block:
       // dueTime − duration − reminder.  For all other events/sessions just use
       // dueTime/startTime − reminder as usual.
-      final isRegularTask = event.type == EventType.task &&
+      final isRegularTask =
+          event.type == EventType.task &&
           event.parentTaskId == null &&
           (event.estimatedMinutes ?? 0) > 0;
       final totalOffset = isRegularTask
@@ -285,7 +286,8 @@ class NotificationService {
 
     // Recurring: compute all upcoming reminder times and schedule each one
     // with a unique, predictable ID derived from the event ID + occurrence index.
-    final isRegularTask = event.type == EventType.task &&
+    final isRegularTask =
+        event.type == EventType.task &&
         event.parentTaskId == null &&
         (event.estimatedMinutes ?? 0) > 0;
     final effectiveReminder = isRegularTask
@@ -362,9 +364,15 @@ class NotificationService {
         notificationLayout: NotificationLayout.Default,
       ),
       schedule: NotificationCalendar(
-        year: at.year, month: at.month, day: at.day,
-        hour: at.hour, minute: at.minute, second: at.second,
-        millisecond: 0, allowWhileIdle: true, preciseAlarm: true,
+        year: at.year,
+        month: at.month,
+        day: at.day,
+        hour: at.hour,
+        minute: at.minute,
+        second: at.second,
+        millisecond: 0,
+        allowWhileIdle: true,
+        preciseAlarm: true,
       ),
     );
   }
@@ -385,14 +393,20 @@ class NotificationService {
           body: i == 0
               ? 'First repeat fired. Watch for the next two…'
               : i == delays.length - 1
-                  ? 'All ${delays.length} repeats delivered! Repeating notifications work.'
-                  : 'Repeat ${i + 1} fired. One more coming…',
+              ? 'All ${delays.length} repeats delivered! Repeating notifications work.'
+              : 'Repeat ${i + 1} fired. One more coming…',
           notificationLayout: NotificationLayout.Default,
         ),
         schedule: NotificationCalendar(
-          year: at.year, month: at.month, day: at.day,
-          hour: at.hour, minute: at.minute, second: at.second,
-          millisecond: 0, allowWhileIdle: true, preciseAlarm: true,
+          year: at.year,
+          month: at.month,
+          day: at.day,
+          hour: at.hour,
+          minute: at.minute,
+          second: at.second,
+          millisecond: 0,
+          allowWhileIdle: true,
+          preciseAlarm: true,
         ),
       );
     }
@@ -409,11 +423,11 @@ class NotificationService {
   }) {
     // How many occurrences to pre-schedule per frequency.
     final maxCount = switch (freq) {
-      RepeatFrequency.daily     => 60,  // ~2 months
-      RepeatFrequency.weekly    => 52,  // ~1 year
-      RepeatFrequency.biweekly  => 26,  // ~1 year
-      RepeatFrequency.monthly   => 12,  // ~1 year
-      RepeatFrequency.none      => 0,
+      RepeatFrequency.daily => 60, // ~2 months
+      RepeatFrequency.weekly => 52, // ~1 year
+      RepeatFrequency.biweekly => 26, // ~1 year
+      RepeatFrequency.monthly => 12, // ~1 year
+      RepeatFrequency.none => 0,
     };
 
     final result = <DateTime>[];
@@ -424,7 +438,9 @@ class NotificationService {
         final occurrence = DateTime(
           base.year + (rawMonth - 1) ~/ 12,
           (rawMonth - 1) % 12 + 1,
-          base.day, base.hour, base.minute,
+          base.day,
+          base.hour,
+          base.minute,
         );
         if (excludedDates.contains(_dateKey(occurrence))) continue;
         final at = occurrence.subtract(reminder);
@@ -434,15 +450,22 @@ class NotificationService {
     }
 
     // Fixed-step (daily / weekly / biweekly).
-    final stepDays = freq == RepeatFrequency.daily ? 1
-        : freq == RepeatFrequency.weekly ? 7 : 14;
+    final stepDays = freq == RepeatFrequency.daily
+        ? 1
+        : freq == RepeatFrequency.weekly
+        ? 7
+        : 14;
 
     // Jump straight to the first occurrence whose reminder is still future.
     final threshold = now.add(reminder);
     final diffSec = threshold.difference(base).inSeconds;
     final startIdx = diffSec <= 0 ? 0 : (diffSec / (stepDays * 86400)).ceil();
 
-    for (int i = startIdx; result.length < maxCount && i < startIdx + maxCount + 10; i++) {
+    for (
+      int i = startIdx;
+      result.length < maxCount && i < startIdx + maxCount + 10;
+      i++
+    ) {
       final occurrence = base.add(Duration(days: i * stepDays));
       if (excludedDates.contains(_dateKey(occurrence))) continue;
       final at = occurrence.subtract(reminder);
@@ -537,6 +560,7 @@ class _CalendarAppState extends State<CalendarApp> {
     );
   }
 }
+
 // Event model and serialization
 class Event {
   final String id;
@@ -557,12 +581,12 @@ class Event {
   final bool isPinned;
   final bool isImportant;
   // Smart-split task fields
-  final bool isSmartTask;          // true on the parent task
-  final String? parentTaskId;      // non-null on work-session events
-  final String? workScheduleType;  // WorkScheduleType.name stored as string
-  final int? workDaysCount;        // N for evenDays / K for timesPerWeek
+  final bool isSmartTask; // true on the parent task
+  final String? parentTaskId; // non-null on work-session events
+  final String? workScheduleType; // WorkScheduleType.name stored as string
+  final int? workDaysCount; // N for evenDays / K for timesPerWeek
   final int? sessionAdjustedMinutes; // carry-forward adjusted duration
-  final bool isSessionRolledOver;  // missed session already forwarded
+  final bool isSessionRolledOver; // missed session already forwarded
 
   Event({
     required this.id,
@@ -640,8 +664,12 @@ class Event {
         ? rawId
         : _newEventId();
     final type = _eventTypeFromString(map['type']) ?? EventType.event;
-    final repeat = _repeatFrequencyFromString(map['repeatFrequency']) ?? RepeatFrequency.none;
-    final isCompleted = map['isCompleted'] is bool ? map['isCompleted'] as bool : _boolFromAny(map['isCompleted']);
+    final repeat =
+        _repeatFrequencyFromString(map['repeatFrequency']) ??
+        RepeatFrequency.none;
+    final isCompleted = map['isCompleted'] is bool
+        ? map['isCompleted'] as bool
+        : _boolFromAny(map['isCompleted']);
     final completedDatesRaw = map['completedDates'];
     final completedDates = <String>[];
     if (completedDatesRaw is List) {
@@ -652,7 +680,9 @@ class Event {
       }
     }
     final estimatedMinutesRaw = map['estimatedMinutes'];
-    final estimatedMinutes = estimatedMinutesRaw is num ? estimatedMinutesRaw.round() : null;
+    final estimatedMinutes = estimatedMinutesRaw is num
+        ? estimatedMinutesRaw.round()
+        : null;
     final subtasksRaw = map['subtasks'];
     final subtasks = <String>[];
     if (subtasksRaw is List) {
@@ -693,14 +723,26 @@ class Event {
       estimatedMinutes: estimatedMinutes,
       subtasks: subtasks,
       excludedDates: excludedDates,
-      isPinned: isPinnedValue is bool ? isPinnedValue : _boolFromAny(isPinnedValue),
-      isImportant: isImportantValue is bool ? isImportantValue : _boolFromAny(isImportantValue),
-      isSmartTask: isSmartTaskValue is bool ? isSmartTaskValue : _boolFromAny(isSmartTaskValue),
+      isPinned: isPinnedValue is bool
+          ? isPinnedValue
+          : _boolFromAny(isPinnedValue),
+      isImportant: isImportantValue is bool
+          ? isImportantValue
+          : _boolFromAny(isImportantValue),
+      isSmartTask: isSmartTaskValue is bool
+          ? isSmartTaskValue
+          : _boolFromAny(isSmartTaskValue),
       parentTaskId: map['parentTaskId'] as String?,
       workScheduleType: map['workScheduleType'] as String?,
-      workDaysCount: map['workDaysCount'] is num ? (map['workDaysCount'] as num).toInt() : null,
-      sessionAdjustedMinutes: map['sessionAdjustedMinutes'] is num ? (map['sessionAdjustedMinutes'] as num).toInt() : null,
-      isSessionRolledOver: isSessionRolledOverValue is bool ? isSessionRolledOverValue : _boolFromAny(isSessionRolledOverValue),
+      workDaysCount: map['workDaysCount'] is num
+          ? (map['workDaysCount'] as num).toInt()
+          : null,
+      sessionAdjustedMinutes: map['sessionAdjustedMinutes'] is num
+          ? (map['sessionAdjustedMinutes'] as num).toInt()
+          : null,
+      isSessionRolledOver: isSessionRolledOverValue is bool
+          ? isSessionRolledOverValue
+          : _boolFromAny(isSessionRolledOverValue),
     );
   }
 
@@ -751,7 +793,8 @@ class Event {
       parentTaskId: parentTaskId ?? this.parentTaskId,
       workScheduleType: workScheduleType ?? this.workScheduleType,
       workDaysCount: workDaysCount ?? this.workDaysCount,
-      sessionAdjustedMinutes: sessionAdjustedMinutes ?? this.sessionAdjustedMinutes,
+      sessionAdjustedMinutes:
+          sessionAdjustedMinutes ?? this.sessionAdjustedMinutes,
       isSessionRolledOver: isSessionRolledOver ?? this.isSessionRolledOver,
     );
   }
@@ -856,7 +899,7 @@ class NoteEntry {
     required this.updatedAt,
     this.isPinned = false,
     this.addedToCalendar = false,
-     this.isChecklist = false,
+    this.isChecklist = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -895,9 +938,12 @@ class NoteEntry {
 
     final createdAt = parseOrNow(map['createdAt'] as String?);
     final updatedAtStr = map['updatedAt'] as String?;
-    final updatedAt = updatedAtStr == null ? createdAt : parseOrNow(updatedAtStr);
+    final updatedAt = updatedAtStr == null
+        ? createdAt
+        : parseOrNow(updatedAtStr);
 
-    final id = (map['id'] as String?) ?? createdAt.microsecondsSinceEpoch.toString();
+    final id =
+        (map['id'] as String?) ?? createdAt.microsecondsSinceEpoch.toString();
 
     final addedToCalendarValue = map['addedToCalendar'];
     final isChecklistValue = map['isChecklist'];
@@ -911,11 +957,13 @@ class NoteEntry {
       date: parseOpt(map['date'] as String?),
       createdAt: createdAt,
       updatedAt: updatedAt,
-      isPinned: isPinnedValue is bool ? isPinnedValue : Event._boolFromAny(isPinnedValue),
+      isPinned: isPinnedValue is bool
+          ? isPinnedValue
+          : Event._boolFromAny(isPinnedValue),
       addedToCalendar: addedToCalendarValue is bool
           ? addedToCalendarValue
           : Event._boolFromAny(addedToCalendarValue),
-        isChecklist: isChecklistValue is bool
+      isChecklist: isChecklistValue is bool
           ? isChecklistValue
           : Event._boolFromAny(isChecklistValue),
     );
@@ -959,6 +1007,8 @@ class ArchiveEntry {
     required this.archivedAt,
     this.date,
     this.payload,
+    this.parentTaskId,
+    this.isSmartTaskSession = false,
   });
 
   final String id;
@@ -970,6 +1020,10 @@ class ArchiveEntry {
   final DateTime archivedAt;
   final DateTime? date;
   final Map<String, dynamic>? payload;
+  // Non-null on archived smart-task sessions; links them back to their parent.
+  final String? parentTaskId;
+  // True when this entry represents an archived smart-task work session.
+  final bool isSmartTaskSession;
 
   Map<String, dynamic> toMap() {
     return {
@@ -982,6 +1036,8 @@ class ArchiveEntry {
       'archivedAt': archivedAt.toIso8601String(),
       'date': date?.toIso8601String(),
       'payload': payload,
+      'parentTaskId': parentTaskId,
+      'isSmartTaskSession': isSmartTaskSession,
     };
   }
 
@@ -1010,6 +1066,8 @@ class ArchiveEntry {
       payload = Map<String, dynamic>.from(rawPayload);
     }
 
+    final isSessionRaw = map['isSmartTaskSession'];
+
     return ArchiveEntry(
       id: (map['id'] as String?) ?? '',
       title: (map['title'] as String?) ?? '',
@@ -1020,9 +1078,12 @@ class ArchiveEntry {
       archivedAt: parseOrNow(map['archivedAt'] as String?),
       date: parseOpt(map['date'] as String?),
       payload: payload,
+      parentTaskId: map['parentTaskId'] as String?,
+      isSmartTaskSession: isSessionRaw is bool ? isSessionRaw : false,
     );
   }
 
+  // Standard event (including smart-task parents).
   factory ArchiveEntry.deletedEvent(Event event) {
     return ArchiveEntry(
       id: event.id,
@@ -1034,6 +1095,45 @@ class ArchiveEntry {
       archivedAt: DateTime.now(),
       date: event.date,
       payload: event.toMap(),
+    );
+  }
+
+  // Smart-task work session — carries parentTaskId so restore can group them.
+  factory ArchiveEntry.deletedSmartTask(
+    Event parent,
+    Iterable<Event> sessions,
+  ) {
+    return ArchiveEntry(
+      id: parent.id,
+      title: parent.title,
+      description: parent.description,
+      category: parent.category,
+      type: parent.type.name,
+      reason: kArchiveReasonDeleted,
+      archivedAt: DateTime.now(),
+      date: parent.date,
+      payload: {
+        ...parent.toMap(),
+        'smartTaskSessions': sessions
+            .map((session) => session.toMap())
+            .toList(),
+      },
+    );
+  }
+
+  factory ArchiveEntry.deletedSmartTaskSession(Event session) {
+    return ArchiveEntry(
+      id: session.id,
+      title: session.title,
+      description: session.description,
+      category: session.category,
+      type: session.type.name,
+      reason: kArchiveReasonDeleted,
+      archivedAt: DateTime.now(),
+      date: session.date,
+      payload: session.toMap(),
+      parentTaskId: session.parentTaskId,
+      isSmartTaskSession: true,
     );
   }
 
@@ -1078,8 +1178,6 @@ class ArchiveEntry {
     );
   }
 }
-
-
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
@@ -1138,7 +1236,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<SharedPreferences> _getPrefs() async {
     return _cachedPrefs ??= await SharedPreferences.getInstance();
   }
-
 
   // Load stored events/notes along with the onboarding card dismissal flag,
   // parsing each JSON payload defensively so corrupt entries do not crash UI.
@@ -1211,8 +1308,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _categories = (storedCategories != null && storedCategories.isNotEmpty)
           ? storedCategories.where((c) => c.trim().isNotEmpty).toSet().toList()
           : List<String>.from(kCategoryOptions);
-      _pinnedNoteCategories =
-          _normalizePinnedCategories(storedPinnedCategories);
+      _pinnedNoteCategories = _normalizePinnedCategories(
+        storedPinnedCategories,
+      );
       _showIntroCard = showIntroPref ?? _events.isEmpty;
       if (loadedDayStart != null) _dayStartTime = loadedDayStart;
       if (loadedDayEnd != null) _dayEndTime = loadedDayEnd;
@@ -1290,9 +1388,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       (entry) => _categoryKey(entry) == key,
     );
     setState(() {
-      _pinnedNoteCategories.removeWhere(
-        (entry) => _categoryKey(entry) == key,
-      );
+      _pinnedNoteCategories.removeWhere((entry) => _categoryKey(entry) == key);
       if (!wasPinned) {
         _pinnedNoteCategories.insert(0, category);
       }
@@ -1302,8 +1398,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<bool> _deleteNoteCategory(String category) async {
     final key = _categoryKey(category);
-    final notesToDelete =
-        _notes.where((note) => _categoryKey(note.category) == key).toList();
+    final notesToDelete = _notes
+        .where((note) => _categoryKey(note.category) == key)
+        .toList();
     final noteCount = notesToDelete.length;
     final noteLabel = noteCount == 1 ? 'note' : 'notes';
     final confirmed = await showDialog<bool>(
@@ -1326,9 +1423,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (!mounted || confirmed != true) return false;
     setState(() {
       _notes.removeWhere((note) => _categoryKey(note.category) == key);
-      _pinnedNoteCategories.removeWhere(
-        (entry) => _categoryKey(entry) == key,
-      );
+      _pinnedNoteCategories.removeWhere((entry) => _categoryKey(entry) == key);
     });
     if (notesToDelete.isNotEmpty) {
       _addArchiveEntries(
@@ -1349,8 +1444,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       } else {
         _notes[i] = note;
       }
-      removedFromArchive =
-          _removeDeletedArchiveEntry(note.id, EventType.note.name);
+      removedFromArchive = _removeDeletedArchiveEntry(
+        note.id,
+        EventType.note.name,
+      );
     });
     unawaited(_saveNotes());
     if (removedFromArchive) {
@@ -1389,8 +1486,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _saveArchive() async {
     final prefs = await _getPrefs();
-    final encoded =
-        _archiveEntries.map((entry) => jsonEncode(entry.toMap())).toList();
+    final encoded = _archiveEntries
+        .map((entry) => jsonEncode(entry.toMap()))
+        .toList();
     await prefs.setStringList(_archiveStorageKey, encoded);
   }
 
@@ -1406,7 +1504,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   bool _hasArchiveEntry(ArchiveEntry entry) {
-    return _archiveEntries.any((existing) => _isSameArchiveEntry(existing, entry));
+    return _archiveEntries.any(
+      (existing) => _isSameArchiveEntry(existing, entry),
+    );
   }
 
   void _addArchiveEntries(Iterable<ArchiveEntry> entries) {
@@ -1429,10 +1529,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   bool _removeDeletedArchiveEntry(String id, String type) {
     final before = _archiveEntries.length;
-    _archiveEntries.removeWhere((entry) =>
-        entry.id == id &&
-        entry.type == type &&
-        entry.reason == kArchiveReasonDeleted);
+    _archiveEntries.removeWhere(
+      (entry) =>
+          entry.id == id &&
+          entry.type == type &&
+          entry.reason == kArchiveReasonDeleted,
+    );
     return _archiveEntries.length != before;
   }
 
@@ -1478,8 +1580,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final eventsForSelectedDate = _getEventsForDate(_selectedDate);
-    final freeSlots =
-        _calculateFreeTimeSlots(eventsForSelectedDate, targetDate: _selectedDate);
+    final freeSlots = _calculateFreeTimeSlots(
+      eventsForSelectedDate,
+      targetDate: _selectedDate,
+    );
 
     // Each tab is rendered independently so the surrounding scaffold stays
     // consistent while switching between calendar, notes, and daily planner.
@@ -1494,18 +1598,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
     })();
 
-
     return Scaffold(
       extendBody: true,
-      backgroundColor:
-          _currentTab == HomeTab.daily ? Colors.white : const Color(0xFFF5F7FB),
+      backgroundColor: _currentTab == HomeTab.daily
+          ? Colors.white
+          : const Color(0xFFF5F7FB),
       body: SafeArea(child: body),
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
   Widget _buildCalendarBody(
-      List<Event> eventsForSelectedDate, List<_TimeSlot> freeSlots) {
+    List<Event> eventsForSelectedDate,
+    List<_TimeSlot> freeSlots,
+  ) {
     // Overview tab combines the small month picker, daily agenda, and summaries
     // for free time and scheduled items.
     return Column(
@@ -1520,7 +1626,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 _buildCalendarCard(eventsForSelectedDate),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                  child: _buildFreeTimeOverview(freeSlots, eventsForSelectedDate),
+                  child: _buildFreeTimeOverview(
+                    freeSlots,
+                    eventsForSelectedDate,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -1560,10 +1669,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
             children: [
               _buildCircularIconButton(Icons.arrow_back_ios_new, () {
                 setState(() {
-                  final deltaDays =
-                      _currentScheduleView == _ScheduleView.weekly ? 7 : 1;
-                  _selectedDate =
-                      _selectedDate.subtract(Duration(days: deltaDays));
+                  final deltaDays = _currentScheduleView == _ScheduleView.weekly
+                      ? 7
+                      : 1;
+                  _selectedDate = _selectedDate.subtract(
+                    Duration(days: deltaDays),
+                  );
                 });
               }),
               const SizedBox(width: 12),
@@ -1592,8 +1703,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               _buildCircularIconButton(Icons.arrow_forward_ios_rounded, () {
                 setState(() {
-                  final deltaDays =
-                      _currentScheduleView == _ScheduleView.weekly ? 7 : 1;
+                  final deltaDays = _currentScheduleView == _ScheduleView.weekly
+                      ? 7
+                      : 1;
                   _selectedDate = _selectedDate.add(Duration(days: deltaDays));
                 });
               }),
@@ -1637,9 +1749,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       child: Row(
         children: [
-          _buildToggleButton(l10n.daily, _ScheduleView.daily, Icons.wb_sunny_rounded),
+          _buildToggleButton(
+            l10n.daily,
+            _ScheduleView.daily,
+            Icons.wb_sunny_rounded,
+          ),
           const SizedBox(width: 8),
-          _buildToggleButton(l10n.weekly, _ScheduleView.weekly, Icons.view_week_rounded),
+          _buildToggleButton(
+            l10n.weekly,
+            _ScheduleView.weekly,
+            Icons.view_week_rounded,
+          ),
         ],
       ),
     );
@@ -1678,9 +1798,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon,
-                  size: 18,
-                  color: isActive ? Colors.blue[700] : Colors.blueGrey[600]),
+              Icon(
+                icon,
+                size: 18,
+                color: isActive ? Colors.blue[700] : Colors.blueGrey[600],
+              ),
               const SizedBox(width: 8),
               Text(
                 label,
@@ -1699,7 +1821,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   double _calculateScheduledHours(List<Event> events) {
     return events.fold<double>(0, (sum, event) {
       if (event.startTime == null || event.endTime == null) return sum + 1;
-      final startMinutes = (event.startTime!.hour * 60) + event.startTime!.minute;
+      final startMinutes =
+          (event.startTime!.hour * 60) + event.startTime!.minute;
       final endMinutes = (event.endTime!.hour * 60) + event.endTime!.minute;
       final durationMinutes = (endMinutes - startMinutes).clamp(30, 180);
       return sum + (durationMinutes / 60).toDouble();
@@ -1708,7 +1831,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildWeeklyOverview() {
     // Google Calendar style: week grid, not summary cards
-    final weekStart = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+    final weekStart = _selectedDate.subtract(
+      Duration(days: _selectedDate.weekday - 1),
+    );
     final weekDays = List.generate(7, (i) => weekStart.add(Duration(days: i)));
 
     // Keep the visual proportions of the calendar grid consistent and avoid the
@@ -1757,14 +1882,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       child: Row(
         children: [
-          _buildWeeklyTabButton(l10n.schedule, _WeeklyTab.schedule, Icons.view_week_rounded),
+          _buildWeeklyTabButton(
+            l10n.schedule,
+            _WeeklyTab.schedule,
+            Icons.view_week_rounded,
+          ),
           const SizedBox(width: 8),
-          _buildWeeklyTabButton(l10n.freeTime, _WeeklyTab.freeTime, Icons.timer_outlined),
+          _buildWeeklyTabButton(
+            l10n.freeTime,
+            _WeeklyTab.freeTime,
+            Icons.timer_outlined,
+          ),
         ],
       ),
     );
   }
-
 
   Widget _buildWeeklyTabButton(String label, _WeeklyTab tab, IconData icon) {
     final isActive = _currentWeeklyTab == tab;
@@ -1799,13 +1931,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 18, color: isActive ? Colors.blue[700] : Colors.blueGrey[600]),
+              Icon(
+                icon,
+                size: 18,
+                color: isActive ? Colors.blue[700] : Colors.blueGrey[600],
+              ),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: isActive ? Colors.blue[800] : Colors.blueGrey[700],                ),
+                  color: isActive ? Colors.blue[800] : Colors.blueGrey[700],
+                ),
               ),
             ],
           ),
@@ -1818,13 +1955,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     const timeColWidth = 52.0;
     final today = DateTime.now();
 
-
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Colors.blueGrey.shade200),
-        ),
+        border: Border(bottom: BorderSide(color: Colors.blueGrey.shade200)),
       ),
       child: Row(
         children: [
@@ -1847,7 +1981,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
   }
-
 
   Widget _buildWeeklyTimeGrid(
     List<DateTime> days, {
@@ -1924,9 +2057,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                   ),
-                  ...eventsByDay[i]
-                      .value
-                      .map((event) => _buildEventTile(event, occurrenceDate: eventsByDay[i].key)),
+                  ...eventsByDay[i].value.map(
+                    (event) => _buildEventTile(
+                      event,
+                      occurrenceDate: eventsByDay[i].key,
+                    ),
+                  ),
                   if (i != eventsByDay.length - 1) const SizedBox(height: 8),
                 ],
               ],
@@ -1936,10 +2072,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildWeeklyFreeTimeSection(List<DateTime> weekDays) {
     final freeSlotsByDay = weekDays
-        .map((day) => MapEntry(day, _calculateFreeTimeSlots(_getEventsForDate(day), targetDate: day)))
+        .map(
+          (day) => MapEntry(
+            day,
+            _calculateFreeTimeSlots(_getEventsForDate(day), targetDate: day),
+          ),
+        )
         .toList();
 
-    final hasAnyFreeTime = freeSlotsByDay.any((entry) => entry.value.isNotEmpty);
+    final hasAnyFreeTime = freeSlotsByDay.any(
+      (entry) => entry.value.isNotEmpty,
+    );
 
     final l10n = AppLocalizations.of(context);
     return _OverviewSection(
@@ -1949,23 +2092,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (int i = 0; i < freeSlotsByDay.length; i++) ...[
-                  _buildWeeklyFreeTimeCard(freeSlotsByDay[i].key, freeSlotsByDay[i].value),
-                  if (i != freeSlotsByDay.length - 1) const SizedBox(height: 12),
+                  _buildWeeklyFreeTimeCard(
+                    freeSlotsByDay[i].key,
+                    freeSlotsByDay[i].value,
+                  ),
+                  if (i != freeSlotsByDay.length - 1)
+                    const SizedBox(height: 12),
                 ],
               ],
             )
           : const _EmptyOverviewMessage(
-              message: 'No free time detected this week. Add time ranges to see openings.',
+              message:
+                  'No free time detected this week. Add time ranges to see openings.',
             ),
     );
   }
 
   Widget _buildWeeklyFreeTimeCard(DateTime date, List<_TimeSlot> slots) {
-    final totalDuration = slots.fold<Duration>(Duration.zero, (sum, slot) => sum + slot.duration);
+    final totalDuration = slots.fold<Duration>(
+      Duration.zero,
+      (sum, slot) => sum + slot.duration,
+    );
     final dateLabel = DateFormat('EEE, MMM d').format(date);
     final dayStart = DateTime(date.year, date.month, date.day, _dayStartHour);
     final dayEnd = DateTime(date.year, date.month, date.day, _dayEndHour);
-    final isFreeAllDay = slots.length == 1 &&
+    final isFreeAllDay =
+        slots.length == 1 &&
         slots.first.start == dayStart &&
         slots.first.end == dayEnd;
 
@@ -2001,7 +2153,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ),
               if (totalDuration > Duration.zero)
-                _buildSummaryChip(Icons.timer_outlined, _formatDuration(totalDuration)),
+                _buildSummaryChip(
+                  Icons.timer_outlined,
+                  _formatDuration(totalDuration),
+                ),
             ],
           ),
           const SizedBox(height: 10),
@@ -2030,7 +2185,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       children: [
-                        Icon(Icons.timer_outlined, size: 16, color: Colors.green[600]),
+                        Icon(
+                          Icons.timer_outlined,
+                          size: 16,
+                          color: Colors.green[600],
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           '${_formatTime(slot.start)} - ${_formatTime(slot.end)} · ${_formatDuration(slot.duration)}',
@@ -2045,7 +2204,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
   }
-
 
   List<Widget> _buildWeeklyNowLine(
     List<DateTime> days,
@@ -2088,7 +2246,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     ];
   }
-
 
   Widget _buildWeeklyGridStack({
     required List<DateTime> days,
@@ -2154,93 +2311,132 @@ class _CalendarScreenState extends State<CalendarScreen> {
               );
             }),
           ),
-        // vertical separators
-        Positioned(
-          left: timeColWidth,
-          top: 0,
-          bottom: 0,
-          child: SizedBox(
-            width: gridWidth - timeColWidth,
-            child: Row(
-              children: List.generate(7, (_) {
-                return Expanded(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        right: BorderSide(color: Color(0xFFE7EDF6)),
+          // vertical separators
+          Positioned(
+            left: timeColWidth,
+            top: 0,
+            bottom: 0,
+            child: SizedBox(
+              width: gridWidth - timeColWidth,
+              child: Row(
+                children: List.generate(7, (_) {
+                  return Expanded(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          right: BorderSide(color: Color(0xFFE7EDF6)),
+                        ),
                       ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+
+          // events — snapped to the visible grid lines
+          for (int dayIndex = 0; dayIndex < 7; dayIndex++)
+            ...dayLayouts[dayIndex]!.map((layout) {
+              final top =
+                  ((layout.startMinutes / 60) * hourHeight) + lineOffset;
+              final minHeight = hourHeight * 0.25;
+              final height = math.max(
+                minHeight,
+                ((layout.endMinutes - layout.startMinutes) / 60) * hourHeight,
+              );
+              const columnGap = 2.0;
+              final columnWidth = layout.columnCount > 1
+                  ? (dayWidth - columnGap) / layout.columnCount
+                  : dayWidth;
+              final left = layout.columnCount > 1
+                  ? timeColWidth +
+                        (dayIndex * dayWidth) +
+                        layout.column * (columnWidth + columnGap)
+                  : timeColWidth + (dayIndex * dayWidth);
+
+              if (layout.isThinLine) {
+                return Positioned(
+                  top: top - 15,
+                  left: left,
+                  width: columnWidth,
+                  child: GestureDetector(
+                    onTap: () => _showEditEventDialog(
+                      layout.event,
+                      occurrenceDate: days[dayIndex],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          layout.event.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.blue[800],
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: Colors.blue[600],
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            Expanded(
+                              child: Container(
+                                height: 1.5,
+                                color: Colors.blue[400],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 );
-              }),
-            ),
-          ),
-        ),
+              }
 
-        // events — snapped to the visible grid lines
-        for (int dayIndex = 0; dayIndex < 7; dayIndex++)
-          ...dayLayouts[dayIndex]!.map((layout) {
-            final top = ((layout.startMinutes / 60) * hourHeight) + lineOffset;
-            final minHeight = hourHeight * 0.25;
-            final height = math.max(
-              minHeight,
-              ((layout.endMinutes - layout.startMinutes) / 60) * hourHeight,
-            );
-            const columnGap = 2.0;
-            final columnWidth = layout.columnCount > 1
-                ? (dayWidth - columnGap) / layout.columnCount
-                : dayWidth;
-            final left = layout.columnCount > 1
-                ? timeColWidth + (dayIndex * dayWidth) + layout.column * (columnWidth + columnGap)
-                : timeColWidth + (dayIndex * dayWidth);
+              return Positioned(
+                top: top,
+                left: left,
+                width: columnWidth,
+                height: height,
+                child: _buildWeeklyEventBlock(
+                  layout.event,
+                  layout.startTime,
+                  layout.endTime,
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
 
-            return Positioned(
-              top: top,
-              left: left,
-              width: columnWidth,
-              height: height,
-              child: _buildWeeklyEventBlock(
-                layout.event,
-                layout.startTime,
-                layout.endTime,
-              ),
-            );
-          }),
-      ],
-    ),
-  );
-}
-
-
-
-
-
-
-
-Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
-  return Container(
-    padding: const EdgeInsets.all(5),
-    decoration: BoxDecoration(
-      color: Colors.blue[600],
-      borderRadius: BorderRadius.circular(5),
-    ),
-    child: DefaultTextStyle(
-      style: const TextStyle(color: Colors.white),
-      child: Text(
-        event.title,
-        maxLines: 1,
-        overflow: TextOverflow.clip,
-        style: const TextStyle(
-          fontWeight: FontWeight.w800,
-          fontSize: 12,
+  Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: Colors.blue[600],
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: DefaultTextStyle(
+        style: const TextStyle(color: Colors.white),
+        child: Text(
+          event.title,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
         ),
       ),
-    ),
-  );
-}
-
-
-
+    );
+  }
 
   Widget _buildWeeklyDayCard(DateTime date, List<Event> events) {
     final isSelected = _isSameDay(date, _selectedDate);
@@ -2262,8 +2458,9 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
           color: isSelected ? const Color(0xFFE9F1FF) : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color:
-                isSelected ? const Color(0xFFBFD4FF) : const Color(0xFFE5EAF2),
+            color: isSelected
+                ? const Color(0xFFBFD4FF)
+                : const Color(0xFFE5EAF2),
           ),
           boxShadow: const [
             BoxShadow(
@@ -2358,9 +2555,15 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      _buildSummaryChip(Icons.schedule, '${scheduledHours.toStringAsFixed(1)} hrs'),
+                      _buildSummaryChip(
+                        Icons.schedule,
+                        '${scheduledHours.toStringAsFixed(1)} hrs',
+                      ),
                       const SizedBox(width: 8),
-                      _buildSummaryChip(Icons.check_circle_outline, '$eventCount scheduled'),
+                      _buildSummaryChip(
+                        Icons.check_circle_outline,
+                        '$eventCount scheduled',
+                      ),
                     ],
                   ),
                 ],
@@ -2449,7 +2652,10 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     );
     final nowMinutes = ((now.hour - startHour) * 60) + now.minute;
     final showNowLine =
-        isToday && nowMinutes >= 0 && nowMinutes <= totalMinutes && totalMinutes > 0;
+        isToday &&
+        nowMinutes >= 0 &&
+        nowMinutes <= totalMinutes &&
+        totalMinutes > 0;
     final nowTop =
         ((nowMinutes.clamp(0, totalMinutes)) / 60) * hourHeight + lineOffset;
 
@@ -2506,12 +2712,19 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                 }),
               ),
               ...eventLayouts.map((layout) {
-                final top = (layout.startMinutes / 60) * hourHeight + lineOffset;
+                final top =
+                    (layout.startMinutes / 60) * hourHeight + lineOffset;
                 final height =
-                    ((layout.endMinutes - layout.startMinutes) / 60) * hourHeight;
-                final visualHeight = height < minEventHeight ? minEventHeight : height;
+                    ((layout.endMinutes - layout.startMinutes) / 60) *
+                    hourHeight;
+                final visualHeight = height < minEventHeight
+                    ? minEventHeight
+                    : height;
                 final availableWidth =
-                    MediaQuery.of(context).size.width - timelineLeft - timelineRight - 8;
+                    MediaQuery.of(context).size.width -
+                    timelineLeft -
+                    timelineRight -
+                    8;
                 const columnGap = 4.0;
                 final blockWidth = layout.columnCount > 1
                     ? (availableWidth - columnGap) / layout.columnCount
@@ -2528,7 +2741,9 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                     right: 0,
                     child: GestureDetector(
                       onTap: () => _showEditEventDialog(
-                          layout.event, occurrenceDate: _selectedDate),
+                        layout.event,
+                        occurrenceDate: _selectedDate,
+                      ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
@@ -2541,7 +2756,10 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                             ),
                           ),
                           Expanded(
-                            child: Container(height: 2, color: Colors.blue[400]),
+                            child: Container(
+                              height: 2,
+                              color: Colors.blue[400],
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Flexible(
@@ -2580,19 +2798,29 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: () => _showEditEventDialog(layout.event, occurrenceDate: _selectedDate),
+                        onTap: () => _showEditEventDialog(
+                          layout.event,
+                          occurrenceDate: _selectedDate,
+                        ),
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            final isCompact = constraints.maxHeight <= minEventHeight + 0.1;
+                            final isCompact =
+                                constraints.maxHeight <= minEventHeight + 0.1;
                             final verticalPadding = isCompact ? 6.0 : 8.0;
-                            final betweenTitleAndCategory = isCompact ? 4.0 : 6.0;
-                            final betweenCategoryAndTime = isCompact ? 2.0 : 4.0;
+                            final betweenTitleAndCategory = isCompact
+                                ? 4.0
+                                : 6.0;
+                            final betweenCategoryAndTime = isCompact
+                                ? 2.0
+                                : 4.0;
 
                             return DecoratedBox(
                               decoration: BoxDecoration(
                                 color: const Color(0xFFEFF3FF),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFD7E2F8)),
+                                border: Border.all(
+                                  color: const Color(0xFFD7E2F8),
+                                ),
                               ),
                               child: Padding(
                                 padding: EdgeInsets.symmetric(
@@ -2604,19 +2832,23 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                                   mainAxisSize: MainAxisSize.max,
                                   children: [
                                     ConstrainedBox(
-                                      constraints: const BoxConstraints(maxHeight: 28),
+                                      constraints: const BoxConstraints(
+                                        maxHeight: 28,
+                                      ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Flexible(
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 5,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 5,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: Colors.white,
-                                                borderRadius: BorderRadius.circular(10),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
                                               ),
                                               child: Text(
                                                 layout.event.title,
@@ -2631,7 +2863,9 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                                           ),
                                           const SizedBox(width: 8),
                                           Icon(
-                                            _iconForEventType(layout.event.type),
+                                            _iconForEventType(
+                                              layout.event.type,
+                                            ),
                                             size: 16,
                                             color: Colors.blue[700],
                                           ),
@@ -2704,10 +2938,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                       ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Container(
-                          height: 1.5,
-                          color: Colors.red[300],
-                        ),
+                        child: Container(height: 1.5, color: Colors.red[300]),
                       ),
                       const SizedBox(width: 6),
                       Container(
@@ -2765,8 +2996,11 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.auto_awesome_outlined,
-                      color: Colors.deepPurple.shade400, size: 18),
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    color: Colors.deepPurple.shade400,
+                    size: 18,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -2854,32 +3088,37 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
               hour: startHour + blockStart ~/ 60,
               minute: blockStart % 60,
             );
-            layouts.add(_TimedEventLayout(
-              event: event,
-              startTime: startTOD,
-              endTime: dueTime,
-              startMinutes: blockStart,
-              endMinutes: blockEnd,
-            ));
+            layouts.add(
+              _TimedEventLayout(
+                event: event,
+                startTime: startTOD,
+                endTime: dueTime,
+                startMinutes: blockStart,
+                endMinutes: blockEnd,
+              ),
+            );
           }
         } else {
           // No duration → thin line at dueTime (1-minute slot for positioning).
           final lineStart = clampedDue.clamp(0, totalMinutes - 1);
-          layouts.add(_TimedEventLayout(
-            event: event,
-            startTime: dueTime,
-            endTime: dueTime,
-            startMinutes: lineStart,
-            endMinutes: lineStart + 1,
-            isThinLine: true,
-          ));
+          layouts.add(
+            _TimedEventLayout(
+              event: event,
+              startTime: dueTime,
+              endTime: dueTime,
+              startMinutes: lineStart,
+              endMinutes: lineStart + 1,
+              isThinLine: true,
+            ),
+          );
         }
         continue;
       }
 
       // All other events: use startTime/endTime as-is.
       final start = event.startTime ?? TimeOfDay(hour: startHour, minute: 0);
-      final end = event.endTime ??
+      final end =
+          event.endTime ??
           TimeOfDay(
             hour: math.min(start.hour + 1, endHour),
             minute: start.minute,
@@ -2961,27 +3200,29 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     }
   }
 
-
   Widget _buildNotesBody() {
-    final categories = _notes
-        .map((n) => n.category.trim())
-        .where((c) => c.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort((a, b) {
-        final aPinned = _isNoteCategoryPinned(a);
-        final bPinned = _isNoteCategoryPinned(b);
-        if (aPinned != bPinned) return aPinned ? -1 : 1;
-        return a.toLowerCase().compareTo(b.toLowerCase());
-      });
+    final categories =
+        _notes
+            .map((n) => n.category.trim())
+            .where((c) => c.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) {
+            final aPinned = _isNoteCategoryPinned(a);
+            final bPinned = _isNoteCategoryPinned(b);
+            if (aPinned != bPinned) return aPinned ? -1 : 1;
+            return a.toLowerCase().compareTo(b.toLowerCase());
+          });
 
     int countFor(String category) => _notes
         .where((n) => n.category.toLowerCase() == category.toLowerCase())
         .length;
 
     int pinnedCountFor(String category) => _notes
-        .where((n) =>
-            n.category.toLowerCase() == category.toLowerCase() && n.isPinned)
+        .where(
+          (n) =>
+              n.category.toLowerCase() == category.toLowerCase() && n.isPinned,
+        )
         .length;
 
     return Column(
@@ -3075,8 +3316,8 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
               blurRadius: 12,
               offset: const Offset(0, 6),
             ),
-          ],        
-          ),
+          ],
+        ),
         child: Row(
           children: [
             Icon(Icons.folder_outlined, color: Colors.blueGrey[500]),
@@ -3110,14 +3351,24 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
                   ),
                   if (pinnedCount > 0) ...[
                     const SizedBox(height: 2),
-                    Text('$pinnedCount pinned',
-                        style: TextStyle(fontSize: 12, color: Colors.blueGrey[500])),
+                    Text(
+                      '$pinnedCount pinned',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey[500],
+                      ),
+                    ),
                   ],
                 ],
               ),
             ),
-            Text('$count',
-                style: TextStyle(color: Colors.blueGrey[400], fontWeight: FontWeight.w600)),
+            Text(
+              '$count',
+              style: TextStyle(
+                color: Colors.blueGrey[400],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(width: 2),
             Icon(Icons.chevron_right, color: Colors.blueGrey[300]),
           ],
@@ -3126,7 +3377,11 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     );
   }
 
-  Widget _buildFolderSwipeBg(IconData icon, String label, {bool isRight = false}) {
+  Widget _buildFolderSwipeBg(
+    IconData icon,
+    String label, {
+    bool isRight = false,
+  }) {
     return Container(
       alignment: isRight ? Alignment.centerRight : Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -3139,7 +3394,13 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         children: [
           Icon(icon, color: Colors.blueGrey[700]),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: Colors.blueGrey[700], fontWeight: FontWeight.w700)),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.blueGrey[700],
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -3160,10 +3421,7 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
             ),
           ),
           const Spacer(),
-          _buildIconButton(
-            Icons.folder_outlined,
-            _showNotesCategoryManager,
-          ),
+          _buildIconButton(Icons.folder_outlined, _showNotesCategoryManager),
           const SizedBox(width: 10),
           _buildIconButton(Icons.search, _showEventSearch),
         ],
@@ -3180,8 +3438,10 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     _handleCategoriesUpdated(_normalizeCategories(updated));
   }
 
-
-  Future<void> _showEditEventDialog(Event oldEvent, {DateTime? occurrenceDate}) async {
+  Future<void> _showEditEventDialog(
+    Event oldEvent, {
+    DateTime? occurrenceDate,
+  }) async {
     // Smart task parents get their own editor.
     if (oldEvent.isSmartTask) {
       await _showEditSmartTaskDialog(oldEvent);
@@ -3225,12 +3485,16 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
               setState(() {
                 _events.add(oldEvent);
                 _archiveEntries.removeWhere(
-                  (e) => e.id == archiveEntry.id && e.reason == archiveEntry.reason,
+                  (e) =>
+                      e.id == archiveEntry.id &&
+                      e.reason == archiveEntry.reason,
                 );
               });
               unawaited(_persistEvents());
               unawaited(_saveArchive());
-              unawaited(NotificationService.instance.scheduleEventReminder(oldEvent));
+              unawaited(
+                NotificationService.instance.scheduleEventReminder(oldEvent),
+              );
             },
           ),
         ),
@@ -3239,11 +3503,15 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     }
     // Detect single-occurrence delete from the edit dialog (excludedDates grew by one).
     if (edited.length == 1 && edited.first.id == oldEvent.id) {
-      final newExclusions = Set<String>.from(edited.first.excludedDates)
-          .difference(Set<String>.from(oldEvent.excludedDates));
+      final newExclusions = Set<String>.from(
+        edited.first.excludedDates,
+      ).difference(Set<String>.from(oldEvent.excludedDates));
       if (newExclusions.length == 1) {
         final occurrenceDate = DateTime.parse(newExclusions.first);
-        final archiveEntry = ArchiveEntry.deletedOccurrence(oldEvent, occurrenceDate);
+        final archiveEntry = ArchiveEntry.deletedOccurrence(
+          oldEvent,
+          occurrenceDate,
+        );
         setState(() {
           final i = _events.indexOf(oldEvent);
           if (i != -1) _events[i] = edited.first;
@@ -3254,9 +3522,9 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
         unawaited(_persistEvents());
         unawaited(_saveArchive());
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Occurrence removed')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Occurrence removed')));
         return;
       }
     }
@@ -3272,105 +3540,113 @@ Widget _buildWeeklyEventBlock(Event event, TimeOfDay start, TimeOfDay end) {
     for (final event in edited) {
       unawaited(NotificationService.instance.scheduleEventReminder(event));
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Event updated!')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Event updated!')));
   }
 
+  Widget _buildCompactCalendarHeader() {
+    final monthLabel = DateFormat('MMMM yyyy').format(_currentMonth);
 
-Widget _buildCompactCalendarHeader() {
-  final monthLabel = DateFormat('MMMM yyyy').format(_currentMonth);
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Row(
+          children: [
+            _RoundedArrowButton(
+              icon: Icons.chevron_left,
+              onTap: () {
+                setState(() {
+                  _currentMonth = DateTime(
+                    _currentMonth.year,
+                    _currentMonth.month - 1,
+                  );
+                  _selectedDate = DateTime(
+                    _currentMonth.year,
+                    _currentMonth.month,
+                    1,
+                  );
+                });
+              },
+            ),
 
-  return SafeArea(
-    bottom: false,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Row(
-        children: [
+            const SizedBox(width: 8),
 
-          _RoundedArrowButton(
-            icon: Icons.chevron_left,
-            onTap: () {
-              setState(() {
-                _currentMonth =
-                    DateTime(_currentMonth.year, _currentMonth.month - 1);
-                _selectedDate =
-                    DateTime(_currentMonth.year, _currentMonth.month, 1);
-              });
-            },
-          ),
-
-          const SizedBox(width: 8),
-
-          Expanded(
-            child: Center(
-              child: Text(
-                monthLabel,
-                style: const TextStyle(
-                  fontSize: 21,
-                  fontWeight: FontWeight.w500,
+            Expanded(
+              child: Center(
+                child: Text(
+                  monthLabel,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
 
-          _RoundedArrowButton(
-            icon: Icons.chevron_right,
-            onTap: () {
-              setState(() {
-                _currentMonth =
-                    DateTime(_currentMonth.year, _currentMonth.month + 1);
-                _selectedDate =
-                    DateTime(_currentMonth.year, _currentMonth.month, 1);
-              });
-            },
-          ),
+            _RoundedArrowButton(
+              icon: Icons.chevron_right,
+              onTap: () {
+                setState(() {
+                  _currentMonth = DateTime(
+                    _currentMonth.year,
+                    _currentMonth.month + 1,
+                  );
+                  _selectedDate = DateTime(
+                    _currentMonth.year,
+                    _currentMonth.month,
+                    1,
+                  );
+                });
+              },
+            ),
 
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
 
-          _buildIconButton(Icons.search, _showEventSearch),
-          const SizedBox(width: 8),
-          _buildIconButton(Icons.person_outline, () {
-            Navigator.of(context)
-                .push(
-                  MaterialPageRoute(
-                    builder: (_) => ProfilePage(
-                      currentLocale: widget.currentLocale,
-                      onLocaleChanged: widget.onLocaleChanged,
-                      dayStartTime: _dayStartTime,
-                      dayEndTime: _dayEndTime,
-                      onDayTimesChanged: (start, end) {
-                        setState(() {
-                          _dayStartTime = start;
-                          _dayEndTime = end;
-                        });
-                        unawaited(_persistDayTimes());
-                      },
+            _buildIconButton(Icons.search, _showEventSearch),
+            const SizedBox(width: 8),
+            _buildIconButton(Icons.person_outline, () {
+              Navigator.of(context)
+                  .push(
+                    MaterialPageRoute(
+                      builder: (_) => ProfilePage(
+                        currentLocale: widget.currentLocale,
+                        onLocaleChanged: widget.onLocaleChanged,
+                        onArchiveChanged: _loadPersistedState,
+                        dayStartTime: _dayStartTime,
+                        dayEndTime: _dayEndTime,
+                        onDayTimesChanged: (start, end) {
+                          setState(() {
+                            _dayStartTime = start;
+                            _dayEndTime = end;
+                          });
+                          unawaited(_persistDayTimes());
+                        },
+                      ),
                     ),
-                  ),
-                )
-                .then((_) => _loadPersistedState());
-          }),
-        ],
+                  )
+                  .then((_) => _loadPersistedState());
+            }),
+          ],
+        ),
       ),
-    ),
-  );
-}
-
+    );
+  }
 
   Future<void> _showEventSearch() async {
     if (_events.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add an event to search.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add an event to search.')));
       return;
     }
 
     final selectedEvent = await showSearch<Event?>(
       context: context,
-        delegate: EventSearchDelegate(
+      delegate: EventSearchDelegate(
         events: List<Event>.from(
           _events.where((event) => event.type != EventType.note),
         ),
@@ -3438,33 +3714,31 @@ Widget _buildCompactCalendarHeader() {
     );
   }
 
-
-
-Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
-  return Container(
-    margin: EdgeInsets.zero,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.05),
-          blurRadius: 16,
-          offset: const Offset(0, 10),
-        ),
-      ],
-    ),
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-      child: Column(
-        children: [
-          _buildWeekdayHeader(),
-          const SizedBox(height: 12),
-          _buildCalendarGrid(eventsForSelectedDate),
+  Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
+    return Container(
+      margin: EdgeInsets.zero,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
         ],
       ),
-    ),
-  );
-}
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+        child: Column(
+          children: [
+            _buildWeekdayHeader(),
+            const SizedBox(height: 12),
+            _buildCalendarGrid(eventsForSelectedDate),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildIntroOverlay() {
     return Positioned.fill(
@@ -3489,10 +3763,7 @@ Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
                   const Text(
                     'This is the Calendar page.\nThis is where you can see your tasks on the calendar and your free time.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
@@ -3520,158 +3791,163 @@ Widget _buildCalendarCard(List<Event> eventsForSelectedDate) {
     );
   }
 
-Widget _buildWeekdayHeader() {
-  const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  Widget _buildWeekdayHeader() {
+    const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 6),
-    child: Row(
-      children: List.generate(7, (i) {
-        return Expanded(
-          child: Center(
-            child: Text(
-              labels[i],
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.blueGrey[500],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Row(
+        children: List.generate(7, (i) {
+          return Expanded(
+            child: Center(
+              child: Text(
+                labels[i],
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blueGrey[500],
+                ),
               ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
+    final firstOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
+
+    // weekday: Mon=1..Sun=7, we want Sun=0..Sat=6
+    final startOffset = firstOfMonth.weekday % 7;
+    final gridStart = firstOfMonth.subtract(Duration(days: startOffset));
+
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        mainAxisSpacing: 0,
+        crossAxisSpacing: 0,
+        childAspectRatio: .80, // tweak if you want taller cells
+      ),
+      itemCount: 42,
+      itemBuilder: (context, index) {
+        final date = DateTime(
+          gridStart.year,
+          gridStart.month,
+          gridStart.day + index,
+        );
+
+        final isInMonth = date.month == _currentMonth.month;
+        final isSelected = _isSameDay(date, _selectedDate);
+        final isToday = _isSameDay(date, DateTime.now());
+
+        final dayEvents = _getEventsForDate(date);
+        final hasEvents = dayEvents.isNotEmpty;
+
+        // Draw thin grid lines like the reference
+        final isLastCol = (index % 7) == 6;
+        final isLastRow = index >= 35;
+
+        return InkWell(
+          onTap: () {
+            setState(() => _selectedDate = date);
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? Colors.blue.withOpacity(0.08) // subtle selected cell wash
+                  : Colors.white,
+              border: Border(
+                right: isLastCol
+                    ? BorderSide.none
+                    : BorderSide(color: Colors.blueGrey.shade100, width: 1),
+                bottom: isLastRow
+                    ? BorderSide.none
+                    : BorderSide(color: Colors.blueGrey.shade100, width: 1),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                // Day number row with selected circle
+                Row(
+                  children: [
+                    Container(
+                      width: 35,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? Colors.blue[600]
+                            : Colors.transparent,
+                      ),
+                      child: Text(
+                        '${date.day}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected
+                              ? Colors.white
+                              : !isInMonth
+                              ? Colors.blueGrey[300]
+                              : isToday
+                              ? Colors.blue[700]
+                              : Colors.blueGrey[800],
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+
+                const SizedBox(height: 6),
+
+                // Event chip like the reference ("Welco...")
+                Expanded(
+                  child: hasEvents
+                      ? Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 100,
+                            minHeight: 22,
+                          ),
+                          alignment: Alignment
+                              .center, // 👈 controls text position in pill
+                          decoration: BoxDecoration(
+                            color: Colors.blue[600],
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            dayEvents.first.title,
+                            maxLines: 1,
+                            textAlign: TextAlign.center, // 👈 text alignment
+                            overflow: TextOverflow.clip,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
             ),
           ),
         );
-      }),
-    ),
-  );
-}
-
-
-Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
-  final firstOfMonth = DateTime(_currentMonth.year, _currentMonth.month, 1);
-
-  // weekday: Mon=1..Sun=7, we want Sun=0..Sat=6
-  final startOffset = firstOfMonth.weekday % 7;
-  final gridStart = firstOfMonth.subtract(Duration(days: startOffset));
-
-  return GridView.builder(
-    padding: EdgeInsets.zero,
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 7,
-      mainAxisSpacing: 0,
-      crossAxisSpacing: 0,
-      childAspectRatio: .80, // tweak if you want taller cells
-    ),
-    itemCount: 42,
-    itemBuilder: (context, index) {
-      final date = DateTime(gridStart.year, gridStart.month, gridStart.day + index);
-
-      final isInMonth = date.month == _currentMonth.month;
-      final isSelected = _isSameDay(date, _selectedDate);
-      final isToday = _isSameDay(date, DateTime.now());
-
-      final dayEvents = _getEventsForDate(date);
-      final hasEvents = dayEvents.isNotEmpty;
-
-      // Draw thin grid lines like the reference
-      final isLastCol = (index % 7) == 6;
-      final isLastRow = index >= 35;
-
-      return InkWell(
-        onTap: () {
-          setState(() => _selectedDate = date);
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected
-                ? Colors.blue.withOpacity(0.08) // subtle selected cell wash
-                : Colors.white,
-            border: Border(
-              right: isLastCol
-                  ? BorderSide.none
-                  : BorderSide(color: Colors.blueGrey.shade100, width: 1),
-              bottom: isLastRow
-                  ? BorderSide.none
-                  : BorderSide(color: Colors.blueGrey.shade100, width: 1),
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              // Day number row with selected circle
-              Row(
-                children: [
-                  Container(
-                    width: 35,
-                    height: 26,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSelected
-                          ? Colors.blue[600]
-                          : Colors.transparent,
-                    ),
-                    child: Text(
-                      '${date.day}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isSelected
-                            ? Colors.white
-                            : !isInMonth
-                                ? Colors.blueGrey[300]
-                                : isToday
-                                    ? Colors.blue[700]
-                                    : Colors.blueGrey[800],
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                ],
-              ),
-
-              const SizedBox(height: 6),
-
-              // Event chip like the reference ("Welco...")
-              Expanded(
-                child: hasEvents
-                    ? Container(
-                        constraints: const BoxConstraints(minWidth: 100, minHeight: 22),
-                        alignment: Alignment.center, // 👈 controls text position in pill
-                        decoration: BoxDecoration(
-                          color: Colors.blue[600],
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          dayEvents.first.title,
-                          maxLines: 1,
-                          textAlign: TextAlign.center, // 👈 text alignment
-                          overflow: TextOverflow.clip,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-                ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-
-
-
+      },
+    );
+  }
 
   Widget _buildDateOverview(List<Event> events) {
-    final selectedDateLabel =
-        DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
+    final selectedDateLabel = DateFormat(
+      'EEEE, MMM d, yyyy',
+    ).format(_selectedDate);
     final sorted = List<Event>.from(events)
       ..sort((a, b) {
         if (a.isImportant != b.isImportant) return a.isImportant ? -1 : 1;
@@ -3700,10 +3976,12 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
 
   Widget _buildFreeTimeOverview(List<_TimeSlot> freeSlots, List<Event> events) {
     final l10n = AppLocalizations.of(context);
-    final eventsAffectingTime =
-        events.where((event) => event.type != EventType.note).toList();
-    final hasAllDayEvent =
-        eventsAffectingTime.any((event) => !event.hasTimeRange);
+    final eventsAffectingTime = events
+        .where((event) => event.type != EventType.note)
+        .toList();
+    final hasAllDayEvent = eventsAffectingTime.any(
+      (event) => !event.hasTimeRange,
+    );
 
     return _OverviewSection(
       title: l10n.freeTime,
@@ -3720,436 +3998,474 @@ Widget _buildCalendarGrid(List<Event> eventsForSelectedDate) {
               ],
             )
           : hasAllDayEvent
-              ? const _EmptyOverviewMessage(
-                  message: 'No Free Time',
-                )
-              // Has events → show calculated free slots (or the existing empty message)
-              : (freeSlots.isEmpty
-                  ? const _EmptyOverviewMessage(
-                      message: 'No free time detected. Try adjusting your schedule.',
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: freeSlots.map((slot) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Row(
-                            children: [
-                              Icon(Icons.timer_outlined, size: 18, color: Colors.green[600]),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
+          ? const _EmptyOverviewMessage(message: 'No Free Time')
+          // Has events → show calculated free slots (or the existing empty message)
+          : (freeSlots.isEmpty
+                ? const _EmptyOverviewMessage(
+                    message:
+                        'No free time detected. Try adjusting your schedule.',
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: freeSlots.map((slot) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.timer_outlined,
+                              size: 18,
+                              color: Colors.green[600],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${_formatTime(slot.start)} - ${_formatTime(slot.end)} (${_formatDuration(slot.duration)})',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    )),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  )),
     );
   }
 
+  Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
+    final targetDate = occurrenceDate ?? _selectedDate;
+    final categoryColor = _getCategoryColor(event.category);
 
+    final isSession = event.parentTaskId != null;
+    final isSmartParent = event.isSmartTask;
 
+    // For sessions show effective duration (carry-forward adjusted).
+    final effectiveMinutes =
+        event.sessionAdjustedMinutes ?? event.estimatedMinutes;
+    final wasCarriedForward =
+        isSession &&
+        event.sessionAdjustedMinutes != null &&
+        event.estimatedMinutes != null &&
+        event.sessionAdjustedMinutes! > event.estimatedMinutes!;
 
+    final isRegularTask =
+        !isSmartParent && !isSession && event.type == EventType.task;
+    final timeLabel = isSmartParent
+        ? 'Due ${DateFormat('EEE, MMM d').format(event.date)}'
+              '${event.startTime != null ? ' at ${_formatTimeOfDay(event.startTime!)}' : ''}'
+        : isSession && event.startTime != null && effectiveMinutes != null
+        ? '${_formatTimeOfDay(event.startTime!)} · ${_formatDuration(Duration(minutes: effectiveMinutes))}'
+        : isRegularTask && event.startTime != null
+        ? 'Due ${_formatTimeOfDay(event.startTime!)}'
+        : event.hasTimeRange
+        ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
+        : 'All day';
 
-Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
-  final targetDate = occurrenceDate ?? _selectedDate;
-  final categoryColor = _getCategoryColor(event.category);
+    final isTask = event.type == EventType.task;
+    final isTimeOff = event.type == EventType.timeOff;
+    final isNote = event.type == EventType.note;
+    final isCompleted = isTask && event.isCompletedOn(targetDate);
 
-  final isSession = event.parentTaskId != null;
-  final isSmartParent = event.isSmartTask;
+    final IconData typeIcon;
+    final Color typeColor;
+    if (isTask) {
+      typeIcon = Icons.check_circle_outline;
+      typeColor = const Color(0xFFF1E8FF);
+    } else if (isTimeOff) {
+      typeIcon = Icons.beach_access_outlined;
+      typeColor = const Color(0xFFEAF7F1);
+    } else if (isNote) {
+      typeIcon = Icons.sticky_note_2_outlined;
+      typeColor = const Color(0xFFFFF4D9);
+    } else {
+      typeIcon = Icons.event_available_outlined;
+      typeColor = const Color(0xFFE0F2FF);
+    }
 
-  // For sessions show effective duration (carry-forward adjusted).
-  final effectiveMinutes =
-      event.sessionAdjustedMinutes ?? event.estimatedMinutes;
-  final wasCarriedForward = isSession &&
-      event.sessionAdjustedMinutes != null &&
-      event.estimatedMinutes != null &&
-      event.sessionAdjustedMinutes! > event.estimatedMinutes!;
+    final titleStyle = TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      color: isCompleted ? Colors.blueGrey[400] : Colors.blueGrey[900],
+      decoration: isCompleted ? TextDecoration.lineThrough : null,
+    );
+    final subtitleStyle = TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
+      decoration: isCompleted ? TextDecoration.lineThrough : null,
+    );
+    final descriptionStyle = TextStyle(
+      fontSize: 13,
+      color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
+      decoration: isCompleted ? TextDecoration.lineThrough : null,
+    );
 
-  final isRegularTask =
-      !isSmartParent && !isSession && event.type == EventType.task;
-  final timeLabel = isSmartParent
-      ? 'Due ${DateFormat('EEE, MMM d').format(event.date)}'
-            '${event.startTime != null ? ' at ${_formatTimeOfDay(event.startTime!)}' : ''}'
-      : isSession && event.startTime != null && effectiveMinutes != null
-          ? '${_formatTimeOfDay(event.startTime!)} · ${_formatDuration(Duration(minutes: effectiveMinutes))}'
-          : isRegularTask && event.startTime != null
-              ? 'Due ${_formatTimeOfDay(event.startTime!)}'
-              : event.hasTimeRange
-                  ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
-                  : 'All day';
+    final isPinned = event.isPinned;
 
-  final isTask = event.type == EventType.task;
-  final isTimeOff = event.type == EventType.timeOff;
-  final isNote = event.type == EventType.note;
-  final isCompleted = isTask && event.isCompletedOn(targetDate);
+    // Auto-highlight as important if the task is past its due time/date and
+    // not yet completed — visual only, nothing written to disk.
+    final now = DateTime.now();
+    final isPastDueTask =
+        isRegularTask &&
+        !isCompleted &&
+        event.startTime != null &&
+        DateTime(
+          targetDate.year,
+          targetDate.month,
+          targetDate.day,
+          event.startTime!.hour,
+          event.startTime!.minute,
+        ).isBefore(now);
+    final isPastDueSmart =
+        isSmartParent &&
+        !isCompleted &&
+        DateTime(
+          targetDate.year,
+          targetDate.month,
+          targetDate.day,
+        ).isBefore(DateTime(now.year, now.month, now.day));
+    final isImportant = event.isImportant || isPastDueTask || isPastDueSmart;
 
-  final IconData typeIcon;
-  final Color typeColor;
-  if (isTask) {
-    typeIcon = Icons.check_circle_outline;
-    typeColor = const Color(0xFFF1E8FF);
-  } else if (isTimeOff) {
-    typeIcon = Icons.beach_access_outlined;
-    typeColor = const Color(0xFFEAF7F1);
-  } else if (isNote) {
-    typeIcon = Icons.sticky_note_2_outlined;
-    typeColor = const Color(0xFFFFF4D9);
-  } else {
-    typeIcon = Icons.event_available_outlined;
-    typeColor = const Color(0xFFE0F2FF);
-  }
-
-  final titleStyle = TextStyle(
-    fontSize: 20,
-    fontWeight: FontWeight.w800,
-    color: isCompleted ? Colors.blueGrey[400] : Colors.blueGrey[900],
-    decoration: isCompleted ? TextDecoration.lineThrough : null,
-  );
-  final subtitleStyle = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
-    decoration: isCompleted ? TextDecoration.lineThrough : null,
-  );
-  final descriptionStyle = TextStyle(
-    fontSize: 13,
-    color: isCompleted ? Colors.blueGrey[300] : Colors.blueGrey[600],
-    decoration: isCompleted ? TextDecoration.lineThrough : null,
-  );
-
-  final isPinned = event.isPinned;
-
-  // Auto-highlight as important if the task is past its due time/date and
-  // not yet completed — visual only, nothing written to disk.
-  final now = DateTime.now();
-  final isPastDueTask = isRegularTask &&
-      !isCompleted &&
-      event.startTime != null &&
-      DateTime(event.date.year, event.date.month, event.date.day,
-              event.startTime!.hour, event.startTime!.minute)
-          .isBefore(now);
-  final isPastDueSmart = isSmartParent &&
-      !isCompleted &&
-      DateTime(event.date.year, event.date.month, event.date.day)
-          .isBefore(DateTime(now.year, now.month, now.day));
-  final isImportant = event.isImportant || isPastDueTask || isPastDueSmart;
-
-  final chips = <Widget>[
-    // Session tiles show work-session badge instead of generic type
-    if (isSession) ...[
-      _buildInfoChip(Icons.timer_outlined,
+    final chips = <Widget>[
+      // Session tiles show work-session badge instead of generic type
+      if (isSession) ...[
+        _buildInfoChip(
+          Icons.timer_outlined,
           effectiveMinutes != null
               ? _formatDuration(Duration(minutes: effectiveMinutes))
               : 'Session',
-          background: const Color(0xFFEDE7FF)),
-      if (wasCarriedForward)
-        _buildInfoChip(Icons.redo_rounded, 'Carried forward',
-            background: const Color(0xFFFFF3CD)),
-    ] else ...[
-      _buildInfoChip(typeIcon, event.type.label, background: typeColor),
-    ],
-    _buildInfoChip(Icons.folder_outlined, event.category,
-        background: const Color(0xFFF1F4FF)),
-    if (isSmartParent) ...[
-      _buildInfoChip(Icons.auto_awesome_outlined, 'Smart task',
-          background: const Color(0xFFEDE7FF)),
-      if (event.estimatedMinutes != null)
-        _buildInfoChip(Icons.hourglass_bottom_outlined,
-            _formatDuration(Duration(minutes: event.estimatedMinutes!)),
-            background: const Color(0xFFF1F4FF)),
-    ],
-    if (event.reminder != null)
+          background: const Color(0xFFEDE7FF),
+        ),
+        if (wasCarriedForward)
+          _buildInfoChip(
+            Icons.redo_rounded,
+            'Carried forward',
+            background: const Color(0xFFFFF3CD),
+          ),
+      ] else ...[
+        _buildInfoChip(typeIcon, event.type.label, background: typeColor),
+      ],
       _buildInfoChip(
-        Icons.notifications_active_outlined,
-        reminderLabelFromDuration(event.reminder),
-        background: const Color(0xFFFFF1E6),
-      ),
-    if (event.repeatFrequency != RepeatFrequency.none)
-      _buildInfoChip(
-        Icons.autorenew_outlined,
-        event.repeatFrequency.label,
-        background: const Color(0xFFE7F8F2),
-      ),
-    if (isCompleted)
-      _buildInfoChip(
-        Icons.check_circle,
-        'Completed',
-        background: const Color(0xFFE7F8F2),
-      ),
-    if (isImportant)
-      _buildInfoChip(
-        Icons.priority_high_rounded,
-        'Important',
-        background: const Color(0xFFFFF3CD),
-      ),
-    if (isPinned)
-      _buildInfoChip(
-        Icons.push_pin,
-        'Pinned',
+        Icons.folder_outlined,
+        event.category,
         background: const Color(0xFFF1F4FF),
       ),
-  ];
-
-  final iconColor = isCompleted
-      ? Colors.green[600]
-      : isNote
-          ? Colors.amber[700]
-          : Colors.blueGrey[300];
-
-  // Tile background / border change for important events
-  final tileColor = isCompleted
-      ? const Color(0xFFF8FAFD)
-      : isImportant
-          ? const Color(0xFFFFFBF0)
-          : Colors.white;
-  final tileBorder = isImportant
-      ? Border.all(color: Colors.amber[600]!, width: 1.5)
-      : Border.all(color: Colors.blueGrey[50]!);
-
-  return InkWell(
-    borderRadius: BorderRadius.circular(20),
-    onTap: () => _showEditEventDialog(event, occurrenceDate: targetDate),
-    onLongPress: () => _confirmDelete(event, occurrenceDate: targetDate),
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: tileBorder,
-        color: tileColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+      if (isSmartParent) ...[
+        _buildInfoChip(
+          Icons.auto_awesome_outlined,
+          'Smart task',
+          background: const Color(0xFFEDE7FF),
+        ),
+        if (event.estimatedMinutes != null)
+          _buildInfoChip(
+            Icons.hourglass_bottom_outlined,
+            _formatDuration(Duration(minutes: event.estimatedMinutes!)),
+            background: const Color(0xFFF1F4FF),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // HEADER: dot + title + time + pin/important badges
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(top: 6, right: 10),
-                decoration: BoxDecoration(
-                  color: categoryColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(event.title, style: titleStyle),
-                    const SizedBox(height: 2),
-                    Text(timeLabel, style: subtitleStyle),
-                  ],
-                ),
-              ),
-              if (isImportant) ...[
-                const SizedBox(width: 6),
-                Icon(Icons.priority_high_rounded, size: 18, color: Colors.amber[700]),
-              ],
-              if (isPinned) ...[
-                const SizedBox(width: 4),
-                Icon(Icons.push_pin, size: 16, color: Colors.blueGrey[400]),
-              ],
-            ],
-          ),
+      ],
+      if (event.reminder != null)
+        _buildInfoChip(
+          Icons.notifications_active_outlined,
+          reminderLabelFromDuration(event.reminder),
+          background: const Color(0xFFFFF1E6),
+        ),
+      if (event.repeatFrequency != RepeatFrequency.none)
+        _buildInfoChip(
+          Icons.autorenew_outlined,
+          event.repeatFrequency.label,
+          background: const Color(0xFFE7F8F2),
+        ),
+      if (isCompleted)
+        _buildInfoChip(
+          Icons.check_circle,
+          'Completed',
+          background: const Color(0xFFE7F8F2),
+        ),
+      if (isImportant)
+        _buildInfoChip(
+          Icons.priority_high_rounded,
+          'Important',
+          background: const Color(0xFFFFF3CD),
+        ),
+      if (isPinned)
+        _buildInfoChip(
+          Icons.push_pin,
+          'Pinned',
+          background: const Color(0xFFF1F4FF),
+        ),
+    ];
 
-          const SizedBox(height: 10),
+    final iconColor = isCompleted
+        ? Colors.green[600]
+        : isNote
+        ? Colors.amber[700]
+        : Colors.blueGrey[300];
 
-          // CHIPS
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: chips,
-          ),
+    // Tile background / border change for important events
+    final tileColor = isCompleted
+        ? const Color(0xFFF8FAFD)
+        : isImportant
+        ? const Color(0xFFFFFBF0)
+        : Colors.white;
+    final tileBorder = isImportant
+        ? Border.all(color: Colors.amber[600]!, width: 1.5)
+        : Border.all(color: Colors.blueGrey[50]!);
 
-          // DESCRIPTION (optional)
-          if (event.description.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(event.description, style: descriptionStyle),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _showEditEventDialog(event, occurrenceDate: targetDate),
+      onLongPress: () => _confirmDelete(event, occurrenceDate: targetDate),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: tileBorder,
+          color: tileColor,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
           ],
-
-          // SMART TASK PROGRESS + SUBMIT
-          if (isSmartParent) ...[
-            const SizedBox(height: 12),
-            Builder(builder: (_) {
-              final (done, total) = _getSessionProgress(event.id);
-              final allDone = total > 0 && done == total;
-              final fraction = total > 0 ? done / total : 0.0;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // HEADER: dot + title + time + pin/important badges
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  margin: const EdgeInsets.only(top: 6, right: 10),
+                  decoration: BoxDecoration(
+                    color: categoryColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: LinearProgressIndicator(
-                            value: fraction,
-                            minHeight: 8,
-                            backgroundColor: Colors.blueGrey[100],
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              allDone ? Colors.green[600]! : Colors.deepPurple,
+                      Text(event.title, style: titleStyle),
+                      const SizedBox(height: 2),
+                      Text(timeLabel, style: subtitleStyle),
+                    ],
+                  ),
+                ),
+                if (isImportant) ...[
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.priority_high_rounded,
+                    size: 18,
+                    color: Colors.amber[700],
+                  ),
+                ],
+                if (isPinned) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.push_pin, size: 16, color: Colors.blueGrey[400]),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            // CHIPS
+            Wrap(spacing: 6, runSpacing: 6, children: chips),
+
+            // DESCRIPTION (optional)
+            if (event.description.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(event.description, style: descriptionStyle),
+            ],
+
+            // SMART TASK PROGRESS + SUBMIT
+            if (isSmartParent) ...[
+              const SizedBox(height: 12),
+              Builder(
+                builder: (_) {
+                  final (done, total) = _getSessionProgress(event.id);
+                  final allDone = total > 0 && done == total;
+                  final fraction = total > 0 ? done / total : 0.0;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: LinearProgressIndicator(
+                                value: fraction,
+                                minHeight: 8,
+                                backgroundColor: Colors.blueGrey[100],
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  allDone
+                                      ? Colors.green[600]!
+                                      : Colors.deepPurple,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '$done / $total',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: allDone
+                                  ? Colors.green[700]
+                                  : Colors.blueGrey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        allDone
+                            ? 'All sessions complete!'
+                            : '$done of $total session${total == 1 ? '' : 's'} complete',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: allDone
+                              ? Colors.green[700]
+                              : Colors.blueGrey[500],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (allDone && !isCompleted) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () => _submitSmartTask(event),
+                            icon: const Icon(Icons.send_rounded, size: 16),
+                            label: const Text('Submit Assignment'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green[600],
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        '$done / $total',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: allDone
-                              ? Colors.green[700]
-                              : Colors.blueGrey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    allDone
-                        ? 'All sessions complete!'
-                        : '$done of $total session${total == 1 ? '' : 's'} complete',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: allDone
-                          ? Colors.green[700]
-                          : Colors.blueGrey[500],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (allDone && !isCompleted) ...[
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () => _submitSmartTask(event),
-                        icon: const Icon(Icons.send_rounded, size: 16),
-                        label: const Text('Submit Assignment'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.green[600],
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          textStyle: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (isCompleted) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.check_circle, size: 16, color: Colors.green[600]),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Submitted',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.green[700],
-                            fontSize: 13,
-                          ),
+                      ],
+                      if (isCompleted) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: Colors.green[600],
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Submitted',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.green[700],
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                ],
-              );
-            }),
-          ],
+                    ],
+                  );
+                },
+              ),
+            ],
 
-          // TASK TOGGLE under description
-          if (isTask && !isSmartParent) ...[
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-                  splashRadius: 16,
-                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                  onPressed: () => _toggleTaskCompletion(event, targetDate),
-                  icon: Icon(isCompleted ? Icons.check_circle : Icons.radio_button_unchecked, size: 22),
-                  color: iconColor,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    isCompleted
-                        ? (isSession ? 'Session done' : 'Completed')
-                        : (isSession ? 'Mark session done' : 'Mark as complete'),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: isCompleted
-                          ? Colors.green[700]
-                          : Colors.blueGrey[600],
+            // TASK TOGGLE under description
+            if (isTask && !isSmartParent) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 0,
+                      minHeight: 0,
                     ),
-                    softWrap: true,
-                    overflow: TextOverflow.visible,
+                    splashRadius: 16,
+                    visualDensity: const VisualDensity(
+                      horizontal: -4,
+                      vertical: -4,
+                    ),
+                    onPressed: () => _toggleTaskCompletion(event, targetDate),
+                    icon: Icon(
+                      isCompleted
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 22,
+                    ),
+                    color: iconColor,
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isCompleted
+                          ? (isSession ? 'Session done' : 'Completed')
+                          : (isSession
+                                ? 'Mark session done'
+                                : 'Mark as complete'),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: isCompleted
+                            ? Colors.green[700]
+                            : Colors.blueGrey[600],
+                      ),
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
-}
-
-
-
-
+    );
+  }
 
   Widget _buildInfoChip(IconData icon, String label, {Color? background}) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-    decoration: BoxDecoration(
-      color: background ?? const Color(0xFFF1F4FF),
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: Colors.blueGrey[600]),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.blueGrey[700],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background ?? const Color(0xFFF1F4FF),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.blueGrey[600]),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.blueGrey[700],
+              ),
+              softWrap: true,
+              overflow: TextOverflow.visible,
             ),
-            softWrap: true,
-            overflow: TextOverflow.visible,
           ),
-        ),
-      ],
-    ),
-  );
-}
-
-
-
+        ],
+      ),
+    );
+  }
 
   Widget _buildBottomNavigationBar() {
     final l10n = AppLocalizations.of(context);
@@ -4175,7 +4491,6 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: minHeight),
           child: Row(
-
             children: [
               Expanded(
                 child: Row(
@@ -4183,11 +4498,20 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     _buildBottomNavItem(
-                        Icons.calendar_today, l10n.calendar, HomeTab.calendar),
+                      Icons.calendar_today,
+                      l10n.calendar,
+                      HomeTab.calendar,
+                    ),
                     _buildBottomNavItem(
-                        Icons.note_outlined, l10n.notes, HomeTab.notes),
+                      Icons.note_outlined,
+                      l10n.notes,
+                      HomeTab.notes,
+                    ),
                     _buildBottomNavItem(
-                        Icons.view_day_outlined, l10n.daily, HomeTab.daily),
+                      Icons.view_day_outlined,
+                      l10n.daily,
+                      HomeTab.daily,
+                    ),
                   ],
                 ),
               ),
@@ -4272,7 +4596,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
                 color: Colors.blueGrey[200],
@@ -4313,16 +4638,18 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         ? 'No plans scheduled for $formattedDate.'
         : 'Plans for $formattedDate:\n${events.map(_buildShareLine).join('\n')}';
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(summary)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(summary)));
   }
 
   String _buildShareLine(Event event) {
     final timeSegment = event.hasTimeRange
         ? '${_formatTimeOfDay(event.startTime!)} - ${_formatTimeOfDay(event.endTime!)}'
         : 'All day';
-    final buffer = StringBuffer('- ${event.type.label}: ${event.title} ($timeSegment)');
+    final buffer = StringBuffer(
+      '- ${event.type.label}: ${event.title} ($timeSegment)',
+    );
 
     if (event.repeatFrequency != RepeatFrequency.none) {
       buffer.write(' · repeats ${event.repeatFrequency.label.toLowerCase()}');
@@ -4333,8 +4660,6 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
 
     return buffer.toString();
   }
-
-
 
   List<Event> _getEventsForDate(DateTime date) {
     final targetDate = DateTime(date.year, date.month, date.day);
@@ -4370,12 +4695,17 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   bool _occursOnDate(Event event, DateTime date) {
     if (event.excludedDates.contains(_dateKey(date))) return false;
 
-    final baseDate = DateTime(event.date.year, event.date.month, event.date.day);
+    final baseDate = DateTime(
+      event.date.year,
+      event.date.month,
+      event.date.day,
+    );
     if (_isSameDay(baseDate, date)) {
       return true;
     }
 
-    if (event.repeatFrequency == RepeatFrequency.none || date.isBefore(baseDate)) {
+    if (event.repeatFrequency == RepeatFrequency.none ||
+        date.isBefore(baseDate)) {
       return false;
     }
 
@@ -4410,7 +4740,6 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     return date.day == lastOfMonth.day;
   }
 
-
   Color _getCategoryColor(String category) {
     switch (category.toLowerCase()) {
       case 'general':
@@ -4440,24 +4769,17 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     }
   }
 
-  List<_TimeSlot> _calculateFreeTimeSlots(List<Event> events, {DateTime? targetDate}) {
+  List<_TimeSlot> _calculateFreeTimeSlots(
+    List<Event> events, {
+    DateTime? targetDate,
+  }) {
     final blockingEvents = events
         .where((event) => event.type != EventType.note && !event.isSmartTask)
         .toList();
 
     final date = targetDate ?? _selectedDate;
-    final dayStart = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      _dayStartHour,
-    );
-    final dayEnd = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      _dayEndHour,
-    );
+    final dayStart = DateTime(date.year, date.month, date.day, _dayStartHour);
+    final dayEnd = DateTime(date.year, date.month, date.day, _dayEndHour);
 
     if (blockingEvents.isEmpty) {
       return [_TimeSlot(start: dayStart, end: dayEnd)];
@@ -4467,22 +4789,22 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       return [];
     }
 
-    final scheduled = blockingEvents
-        .where((event) => event.hasTimeRange)
-        .map(
-          (event) => _TimeSlot(
-            start: _dateWithTime(date, event.startTime!),
-            end: _dateWithTime(date, event.endTime!),
-          ),
-        )
-        .where((slot) => slot.end.isAfter(slot.start))
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
+    final scheduled =
+        blockingEvents
+            .where((event) => event.hasTimeRange)
+            .map(
+              (event) => _TimeSlot(
+                start: _dateWithTime(date, event.startTime!),
+                end: _dateWithTime(date, event.endTime!),
+              ),
+            )
+            .where((slot) => slot.end.isAfter(slot.start))
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
 
     if (scheduled.isEmpty) {
       return [_TimeSlot(start: dayStart, end: dayEnd)];
     }
-
 
     final merged = <_TimeSlot>[];
     for (final slot in scheduled) {
@@ -4578,9 +4900,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       _handleNoteAdded(result);
       const message = 'Note saved.';
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(message)),
-         );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text(message)));
       }
     }
   }
@@ -4602,7 +4924,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Task "${parent.title}" scheduled across ${sessions.length} session${sessions.length == 1 ? '' : 's'}.'),
+                  'Task "${parent.title}" scheduled across ${sessions.length} session${sessions.length == 1 ? '' : 's'}.',
+                ),
               ),
             );
           }
@@ -4627,7 +4950,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         categories: _categories,
         // Exclude old sessions so they don't block their own replacement slots.
         existingEvents: List.unmodifiable(
-            _events.where((e) => e.parentTaskId != parent.id).toList()),
+          _events.where((e) => e.parentTaskId != parent.id).toList(),
+        ),
         dayStartHour: _dayStartHour,
         dayEndHour: _dayEndHour,
         existing: parent,
@@ -4647,7 +4971,8 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                    '"${updatedParent.title}" updated — ${newSessions.length} session${newSessions.length == 1 ? '' : 's'} rescheduled.'),
+                  '"${updatedParent.title}" updated — ${newSessions.length} session${newSessions.length == 1 ? '' : 's'} rescheduled.',
+                ),
               ),
             );
           }
@@ -4663,37 +4988,50 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     final today = DateTime(now.year, now.month, now.day);
     bool changed = false;
 
-    final missed = _events.where((e) =>
-      e.parentTaskId != null &&
-      !e.isSessionRolledOver &&
-      !e.isCompleted &&
-      DateTime(e.date.year, e.date.month, e.date.day).isBefore(today),
-    ).toList();
+    final missed = _events
+        .where(
+          (e) =>
+              e.parentTaskId != null &&
+              !e.isSessionRolledOver &&
+              !e.isCompleted &&
+              DateTime(e.date.year, e.date.month, e.date.day).isBefore(today),
+        )
+        .toList();
 
     for (final missedSession in missed) {
       // Find earliest upcoming session for the same parent.
-      final candidates = _events.where((e) =>
-        e.parentTaskId == missedSession.parentTaskId &&
-        e.id != missedSession.id &&
-        !e.isSessionRolledOver &&
-        !DateTime(e.date.year, e.date.month, e.date.day).isBefore(today),
-      ).toList()
-        ..sort((a, b) => a.date.compareTo(b.date));
+      final candidates =
+          _events
+              .where(
+                (e) =>
+                    e.parentTaskId == missedSession.parentTaskId &&
+                    e.id != missedSession.id &&
+                    !e.isSessionRolledOver &&
+                    !DateTime(
+                      e.date.year,
+                      e.date.month,
+                      e.date.day,
+                    ).isBefore(today),
+              )
+              .toList()
+            ..sort((a, b) => a.date.compareTo(b.date));
 
       if (candidates.isEmpty) continue;
       final next = candidates.first;
 
-      final missedMins = missedSession.sessionAdjustedMinutes
-          ?? missedSession.estimatedMinutes ?? 0;
-      final nextMins = next.sessionAdjustedMinutes
-          ?? next.estimatedMinutes ?? 0;
+      final missedMins =
+          missedSession.sessionAdjustedMinutes ??
+          missedSession.estimatedMinutes ??
+          0;
+      final nextMins =
+          next.sessionAdjustedMinutes ?? next.estimatedMinutes ?? 0;
       final newAdjusted = nextMins + missedMins;
 
       // Extend the end time of the next session by the rolled-over minutes.
       TimeOfDay? newEnd = next.endTime;
       if (next.startTime != null) {
-        final totalMin = next.startTime!.hour * 60 +
-            next.startTime!.minute + newAdjusted;
+        final totalMin =
+            next.startTime!.hour * 60 + next.startTime!.minute + newAdjusted;
         newEnd = TimeOfDay(
           hour: (totalMin ~/ 60).clamp(0, 23),
           minute: totalMin % 60,
@@ -4756,22 +5094,26 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   /// honouring a 30-min buffer around existing events.
   /// Returns null when there is no free slot within the day window.
   TimeOfDay? _findEarliestSlotForSession(
-      DateTime day, List<Event> existingEvents, int neededMinutes) {
-    final dayStart =
-        DateTime(day.year, day.month, day.day, _dayStartHour);
-    final dayEnd =
-        DateTime(day.year, day.month, day.day, _dayEndHour);
+    DateTime day,
+    List<Event> existingEvents,
+    int neededMinutes,
+  ) {
+    final dayStart = DateTime(day.year, day.month, day.day, _dayStartHour);
+    final dayEnd = DateTime(day.year, day.month, day.day, _dayEndHour);
     const bufferMin = 30;
 
-    final timed = existingEvents
-        .where((e) => e.hasTimeRange)
-        .map((e) => _TimeSlot(
-              start: _dateWithTime(day, e.startTime!),
-              end: _dateWithTime(day, e.endTime!),
-            ))
-        .where((s) => s.end.isAfter(s.start))
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
+    final timed =
+        existingEvents
+            .where((e) => e.hasTimeRange)
+            .map(
+              (e) => _TimeSlot(
+                start: _dateWithTime(day, e.startTime!),
+                end: _dateWithTime(day, e.endTime!),
+              ),
+            )
+            .where((s) => s.end.isAfter(s.start))
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
 
     // Merge overlapping/adjacent blocked slots.
     final merged = <_TimeSlot>[];
@@ -4788,14 +5130,12 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
 
     var cursor = dayStart;
     for (final blocked in merged) {
-      final gapEnd =
-          blocked.start.subtract(const Duration(minutes: bufferMin));
+      final gapEnd = blocked.start.subtract(const Duration(minutes: bufferMin));
       if (gapEnd.isAfter(cursor) &&
           gapEnd.difference(cursor).inMinutes >= neededMinutes) {
         return TimeOfDay(hour: cursor.hour, minute: cursor.minute);
       }
-      final nextFree =
-          blocked.end.add(const Duration(minutes: bufferMin));
+      final nextFree = blocked.end.add(const Duration(minutes: bufferMin));
       if (nextFree.isAfter(cursor)) cursor = nextFree;
     }
 
@@ -4815,14 +5155,18 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     Map<int, int> customDurations = const {},
   }) {
     final totalMinutes = parent.estimatedMinutes ?? 60;
-    final dueDate =
-        DateTime(parent.date.year, parent.date.month, parent.date.day);
+    final dueDate = DateTime(
+      parent.date.year,
+      parent.date.month,
+      parent.date.day,
+    );
 
     final now = DateTime.now();
     final todayNorm = DateTime(now.year, now.month, now.day);
     final twoWeeksBefore = dueDate.subtract(const Duration(days: 14));
-    final startDate =
-        todayNorm.isAfter(twoWeeksBefore) ? todayNorm : twoWeeksBefore;
+    final startDate = todayNorm.isAfter(twoWeeksBefore)
+        ? todayNorm
+        : twoWeeksBefore;
 
     final availableDays = <DateTime>[];
     var cursor = startDate;
@@ -4844,8 +5188,10 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         break;
 
       case WorkScheduleType.timesPerWeek:
-        selectedDays =
-            _pickTimesPerWeekDays(availableDays, workDaysCount.clamp(1, 7));
+        selectedDays = _pickTimesPerWeekDays(
+          availableDays,
+          workDaysCount.clamp(1, 7),
+        );
         final mins = selectedDays.isNotEmpty
             ? (totalMinutes / selectedDays.length).ceil()
             : totalMinutes;
@@ -4857,15 +5203,19 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         final sessionsNeeded = (totalMinutes / minMinutes).ceil();
         final n = sessionsNeeded.clamp(1, availableDays.length);
         selectedDays = availableDays.take(n).toList();
-        final mins =
-            (totalMinutes / selectedDays.length).ceil().clamp(minMinutes, totalMinutes);
+        final mins = (totalMinutes / selectedDays.length).ceil().clamp(
+          minMinutes,
+          totalMinutes,
+        );
         perDayMinutes = List.filled(selectedDays.length, mins);
         break;
 
       case WorkScheduleType.custom:
         selectedDays = customDays;
         perDayMinutes = List.generate(
-            customDays.length, (i) => customDurations[i] ?? 30);
+          customDays.length,
+          (i) => customDurations[i] ?? 30,
+        );
         break;
     }
 
@@ -4879,21 +5229,26 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
       final dayKey = _dateKey(day);
 
       final dayExisting = _events
-          .where((e) =>
-              e.parentTaskId == null &&
-              e.type != EventType.note &&
-              _occursOnDate(e, day))
+          .where(
+            (e) =>
+                e.parentTaskId == null &&
+                e.type != EventType.note &&
+                _occursOnDate(e, day),
+          )
           .toList();
       final alreadyPlaced = scheduledByDay[dayKey] ?? [];
 
-      final slotStart = _findEarliestSlotForSession(
-          day, [...dayExisting, ...alreadyPlaced], mins);
+      final slotStart = _findEarliestSlotForSession(day, [
+        ...dayExisting,
+        ...alreadyPlaced,
+      ], mins);
 
-      final startTOD =
-          slotStart ?? TimeOfDay(hour: _dayStartHour, minute: 0);
+      final startTOD = slotStart ?? TimeOfDay(hour: _dayStartHour, minute: 0);
       final endMin = startTOD.hour * 60 + startTOD.minute + mins;
       final endTOD = TimeOfDay(
-          hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+        hour: (endMin ~/ 60).clamp(0, 23),
+        minute: endMin % 60,
+      );
 
       final session = Event(
         id: _newEventId(),
@@ -4918,8 +5273,7 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
 
   /// Returns (completedSessions, totalSessions) for a smart task parent.
   (int, int) _getSessionProgress(String parentId) {
-    final sessions =
-        _events.where((e) => e.parentTaskId == parentId).toList();
+    final sessions = _events.where((e) => e.parentTaskId == parentId).toList();
     final completed = sessions.where((e) => e.isCompleted).length;
     return (completed, sessions.length);
   }
@@ -4970,21 +5324,29 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         builder: (ctx, setLocal) {
           final endMin = pickedTime.hour * 60 + pickedTime.minute + mins;
           final endTOD = TimeOfDay(
-              hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+            hour: (endMin ~/ 60).clamp(0, 23),
+            minute: endMin % 60,
+          );
 
           return AlertDialog(
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: Row(
               children: [
-                Icon(Icons.timer_outlined,
-                    color: Colors.deepPurple.shade400, size: 20),
+                Icon(
+                  Icons.timer_outlined,
+                  color: Colors.deepPurple.shade400,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     session.title,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 16),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -4996,15 +5358,20 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 // Duration — read-only
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.deepPurple.shade50,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.hourglass_bottom_outlined,
-                          size: 16, color: Colors.deepPurple.shade400),
+                      Icon(
+                        Icons.hourglass_bottom_outlined,
+                        size: 16,
+                        color: Colors.deepPurple.shade400,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'Duration: ${fmtDur(mins)}  (fixed)',
@@ -5021,13 +5388,22 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 // Date row
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.calendar_today_outlined,
-                      color: Colors.blueGrey[500], size: 20),
-                  title: const Text('Date',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: Text(fmtDate(pickedDate),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  leading: Icon(
+                    Icons.calendar_today_outlined,
+                    color: Colors.blueGrey[500],
+                    size: 20,
+                  ),
+                  title: const Text(
+                    'Date',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: Text(
+                    fmtDate(pickedDate),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
                   onTap: () async {
                     final now = DateTime.now();
                     final d = await showDatePicker(
@@ -5043,16 +5419,27 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 // Start time row
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.access_time_outlined,
-                      color: Colors.blueGrey[500], size: 20),
-                  title: const Text('Start time',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: Text(fmtTOD(pickedTime),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  leading: Icon(
+                    Icons.access_time_outlined,
+                    color: Colors.blueGrey[500],
+                    size: 20,
+                  ),
+                  title: const Text(
+                    'Start time',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: Text(
+                    fmtTOD(pickedTime),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
                   onTap: () async {
                     final t = await showTimePicker(
-                        context: ctx, initialTime: pickedTime);
+                      context: ctx,
+                      initialTime: pickedTime,
+                    );
                     if (t != null) setLocal(() => pickedTime = t);
                   },
                 ),
@@ -5060,17 +5447,26 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 // Computed end time — read-only
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.flag_outlined,
-                      color: Colors.blueGrey[400], size: 20),
-                  title: Text('Ends at',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blueGrey[500])),
-                  trailing: Text(fmtTOD(endTOD),
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: Colors.blueGrey[500])),
+                  leading: Icon(
+                    Icons.flag_outlined,
+                    color: Colors.blueGrey[400],
+                    size: 20,
+                  ),
+                  title: Text(
+                    'Ends at',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey[500],
+                    ),
+                  ),
+                  trailing: Text(
+                    fmtTOD(endTOD),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Colors.blueGrey[500],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -5082,18 +5478,23 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
               const Spacer(),
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop('delete_one'),
-                child: const Text('Delete session',
-                    style: TextStyle(color: Colors.redAccent)),
+                child: const Text(
+                  'Delete session',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
               ),
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop('delete_all'),
-                child: const Text('Delete task',
-                    style: TextStyle(color: Colors.redAccent)),
+                child: const Text(
+                  'Delete task',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(ctx).pop('save'),
                 style: FilledButton.styleFrom(
-                    backgroundColor: Colors.deepPurple),
+                  backgroundColor: Colors.deepPurple,
+                ),
                 child: const Text('Save'),
               ),
             ],
@@ -5117,7 +5518,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     // Compute new end time from fixed duration + new start time.
     final endMin = pickedTime.hour * 60 + pickedTime.minute + mins;
     final newEnd = TimeOfDay(
-        hour: (endMin ~/ 60).clamp(0, 23), minute: endMin % 60);
+      hour: (endMin ~/ 60).clamp(0, 23),
+      minute: endMin % 60,
+    );
 
     final updated = session.copyWith(
       date: pickedDate,
@@ -5130,20 +5533,23 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     if (idx != -1) {
       setState(() => _events[idx] = updated);
       unawaited(_persistEvents());
-      unawaited(NotificationService.instance.rescheduleEventReminder(session, updated));
+      unawaited(
+        NotificationService.instance.rescheduleEventReminder(session, updated),
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Session updated.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Session updated.')));
       }
     }
   }
 
   void _confirmDeleteSessionOnly(Event session) {
-    final archiveEntry = ArchiveEntry.deletedEvent(session);
+    final archiveEntry = ArchiveEntry.deletedSmartTaskSession(session);
     setState(() {
       _events.removeWhere((e) => e.id == session.id);
-      if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+      if (!_hasArchiveEntry(archiveEntry))
+        _archiveEntries.insert(0, archiveEntry);
     });
     unawaited(_persistEvents());
     unawaited(_saveArchive());
@@ -5157,11 +5563,15 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
             if (!mounted) return;
             setState(() {
               _events.add(session);
-              _archiveEntries.removeWhere((e) => _isSameArchiveEntry(e, archiveEntry));
+              _archiveEntries.removeWhere(
+                (e) => _isSameArchiveEntry(e, archiveEntry),
+              );
             });
             unawaited(_persistEvents());
             unawaited(_saveArchive());
-            unawaited(NotificationService.instance.scheduleEventReminder(session));
+            unawaited(
+              NotificationService.instance.scheduleEventReminder(session),
+            );
           },
         ),
       ),
@@ -5176,36 +5586,82 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
     final allToDelete = _events
         .where((e) => e.id == parentId || e.parentTaskId == parentId)
         .toList();
-    final archiveEntry = ArchiveEntry.deletedEvent(parent);
-    setState(() {
-      _events.removeWhere((e) => e.id == parentId || e.parentTaskId == parentId);
-      if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
-    });
-    unawaited(_persistEvents());
-    unawaited(_saveArchive());
-    for (final e in allToDelete) {
-      unawaited(NotificationService.instance.cancelEventReminder(e));
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('"${parent.title}" and all sessions deleted.'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () {
-            if (!mounted) return;
-            setState(() {
-              _events.addAll(allToDelete);
-              _archiveEntries.removeWhere((e) => _isSameArchiveEntry(e, archiveEntry));
-            });
-            unawaited(_persistEvents());
-            unawaited(_saveArchive());
-            for (final e in allToDelete) {
-              unawaited(NotificationService.instance.scheduleEventReminder(e));
-            }
-          },
+    final sessionCount = allToDelete.length - 1;
+    showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Smart Task'),
+        content: Text(
+          'Are you sure? This will delete "${parent.title}" and $sessionCount work session${sessionCount == 1 ? '' : 's'} throughout your calendar.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Delete all',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
       ),
-    );
+    ).then((confirmed) {
+      if (confirmed != true || !mounted) return;
+      final sessions = allToDelete
+          .where((e) => e.parentTaskId == parentId)
+          .toList();
+      final parentEntry = ArchiveEntry.deletedSmartTask(parent, sessions);
+      final sessionEntries = sessions
+          .map(ArchiveEntry.deletedSmartTaskSession)
+          .toList();
+      final allEntries = [parentEntry, ...sessionEntries];
+      setState(() {
+        _events.removeWhere(
+          (e) => e.id == parentId || e.parentTaskId == parentId,
+        );
+        // Remove any stale archive entries for this task before inserting fresh ones.
+        _archiveEntries.removeWhere(
+          (e) =>
+              e.reason == kArchiveReasonDeleted &&
+              (e.id == parentId || e.parentTaskId == parentId),
+        );
+        _archiveEntries.insertAll(0, allEntries);
+      });
+      unawaited(_persistEvents());
+      unawaited(_saveArchive());
+      for (final e in allToDelete) {
+        unawaited(NotificationService.instance.cancelEventReminder(e));
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('"${parent.title}" and all sessions deleted.'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              if (!mounted) return;
+              setState(() {
+                _events.addAll(allToDelete);
+                for (final entry in allEntries) {
+                  _archiveEntries.removeWhere(
+                    (e) => _isSameArchiveEntry(e, entry),
+                  );
+                }
+              });
+              unawaited(_persistEvents());
+              unawaited(_saveArchive());
+              for (final e in allToDelete) {
+                unawaited(
+                  NotificationService.instance.scheduleEventReminder(e),
+                );
+              }
+            },
+          ),
+        ),
+      );
+    });
   }
 
   // ── End smart task helpers ────────────────────────────────────────────────
@@ -5259,7 +5715,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
   void _confirmDelete(Event event, {DateTime? occurrenceDate}) {
     // ── Smart task parent: delete parent + all sessions ───────────────────────
     if (event.isSmartTask) {
-      final sessions = _events.where((e) => e.parentTaskId == event.id).toList();
+      final sessions = _events
+          .where((e) => e.parentTaskId == event.id)
+          .toList();
       final count = sessions.length;
       showDialog<bool>(
         context: context,
@@ -5275,17 +5733,32 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Delete all', style: TextStyle(color: Colors.redAccent)),
+              child: const Text(
+                'Delete all',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
           ],
         ),
       ).then((confirmed) {
         if (confirmed != true || !mounted) return;
         final allToDelete = [event, ...sessions];
-        final archiveEntry = ArchiveEntry.deletedEvent(event);
+        final parentEntry = ArchiveEntry.deletedSmartTask(event, sessions);
+        final sessionEntries = sessions
+            .map(ArchiveEntry.deletedSmartTaskSession)
+            .toList();
+        final allEntries = [parentEntry, ...sessionEntries];
         setState(() {
-          _events.removeWhere((e) => e.id == event.id || e.parentTaskId == event.id);
-          if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+          _events.removeWhere(
+            (e) => e.id == event.id || e.parentTaskId == event.id,
+          );
+          // Remove any stale archive entries for this task before inserting fresh ones.
+          _archiveEntries.removeWhere(
+            (e) =>
+                e.reason == kArchiveReasonDeleted &&
+                (e.id == event.id || e.parentTaskId == event.id),
+          );
+          _archiveEntries.insertAll(0, allEntries);
         });
         unawaited(_persistEvents());
         unawaited(_saveArchive());
@@ -5301,14 +5774,18 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 if (!mounted) return;
                 setState(() {
                   _events.addAll(allToDelete);
-                  _archiveEntries.removeWhere(
-                    (e) => _isSameArchiveEntry(e, archiveEntry),
-                  );
+                  for (final entry in allEntries) {
+                    _archiveEntries.removeWhere(
+                      (e) => _isSameArchiveEntry(e, entry),
+                    );
+                  }
                 });
                 unawaited(_persistEvents());
                 unawaited(_saveArchive());
                 for (final e in allToDelete) {
-                  unawaited(NotificationService.instance.scheduleEventReminder(e));
+                  unawaited(
+                    NotificationService.instance.scheduleEventReminder(e),
+                  );
                 }
               },
             ),
@@ -5335,11 +5812,17 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop('one'),
-              child: const Text('This session', style: TextStyle(color: Colors.redAccent)),
+              child: const Text(
+                'This session',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop('all'),
-              child: const Text('Entire task', style: TextStyle(color: Colors.redAccent)),
+              child: const Text(
+                'Entire task',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
           ],
         ),
@@ -5347,10 +5830,11 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         if (choice == null || !mounted) return;
         if (choice == 'one') {
           // Remove just this session.
-          final archiveEntry = ArchiveEntry.deletedEvent(event);
+          final archiveEntry = ArchiveEntry.deletedSmartTaskSession(event);
           setState(() {
             _events.removeWhere((e) => e.id == event.id);
-            if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+            if (!_hasArchiveEntry(archiveEntry))
+              _archiveEntries.insert(0, archiveEntry);
           });
           unawaited(_persistEvents());
           unawaited(_saveArchive());
@@ -5364,11 +5848,15 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                   if (!mounted) return;
                   setState(() {
                     _events.add(event);
-                    _archiveEntries.removeWhere((e) => _isSameArchiveEntry(e, archiveEntry));
+                    _archiveEntries.removeWhere(
+                      (e) => _isSameArchiveEntry(e, archiveEntry),
+                    );
                   });
                   unawaited(_persistEvents());
                   unawaited(_saveArchive());
-                  unawaited(NotificationService.instance.scheduleEventReminder(event));
+                  unawaited(
+                    NotificationService.instance.scheduleEventReminder(event),
+                  );
                 },
               ),
             ),
@@ -5382,10 +5870,24 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           final allToDelete = _events
               .where((e) => e.id == parentId || e.parentTaskId == parentId)
               .toList();
-          final archiveEntry = ArchiveEntry.deletedEvent(parent);
+          final sessions = allToDelete
+              .where((e) => e.parentTaskId == parentId)
+              .toList();
+          final parentEntry = ArchiveEntry.deletedSmartTask(parent, sessions);
+          final sessionEntries = sessions
+              .map(ArchiveEntry.deletedSmartTaskSession)
+              .toList();
+          final allEntries = [parentEntry, ...sessionEntries];
           setState(() {
-            _events.removeWhere((e) => e.id == parentId || e.parentTaskId == parentId);
-            if (!_hasArchiveEntry(archiveEntry)) _archiveEntries.insert(0, archiveEntry);
+            _events.removeWhere(
+              (e) => e.id == parentId || e.parentTaskId == parentId,
+            );
+            _archiveEntries.removeWhere(
+              (e) =>
+                  e.reason == kArchiveReasonDeleted &&
+                  (e.id == parentId || e.parentTaskId == parentId),
+            );
+            _archiveEntries.insertAll(0, allEntries);
           });
           unawaited(_persistEvents());
           unawaited(_saveArchive());
@@ -5401,12 +5903,18 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                   if (!mounted) return;
                   setState(() {
                     _events.addAll(allToDelete);
-                    _archiveEntries.removeWhere((e) => _isSameArchiveEntry(e, archiveEntry));
+                    for (final entry in allEntries) {
+                      _archiveEntries.removeWhere(
+                        (e) => _isSameArchiveEntry(e, entry),
+                      );
+                    }
                   });
                   unawaited(_persistEvents());
                   unawaited(_saveArchive());
                   for (final e in allToDelete) {
-                    unawaited(NotificationService.instance.scheduleEventReminder(e));
+                    unawaited(
+                      NotificationService.instance.scheduleEventReminder(e),
+                    );
                   }
                 },
               ),
@@ -5425,7 +5933,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Delete Event'),
-          content: Text('Delete "${event.title}" for this day only, or all repeats?'),
+          content: Text(
+            'Delete "${event.title}" for this day only, or all repeats?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
@@ -5454,7 +5964,10 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
           final updated = event.copyWith(
             excludedDates: [...event.excludedDates, key],
           );
-          final archiveEntry = ArchiveEntry.deletedOccurrence(event, occurrenceDate);
+          final archiveEntry = ArchiveEntry.deletedOccurrence(
+            event,
+            occurrenceDate,
+          );
           setState(() {
             final i = _events.indexOf(event);
             if (i != -1) _events[i] = updated;
@@ -5505,12 +6018,16 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                   setState(() {
                     _events.add(event);
                     _archiveEntries.removeWhere(
-                      (e) => e.id == archiveEntry.id && e.reason == archiveEntry.reason,
+                      (e) =>
+                          e.id == archiveEntry.id &&
+                          e.reason == archiveEntry.reason,
                     );
                   });
                   unawaited(_persistEvents());
                   unawaited(_saveArchive());
-                  unawaited(NotificationService.instance.scheduleEventReminder(event));
+                  unawaited(
+                    NotificationService.instance.scheduleEventReminder(event),
+                  );
                 },
               ),
             ),
@@ -5539,7 +6056,9 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                 });
                 unawaited(_persistEvents());
                 unawaited(_saveArchive());
-                unawaited(NotificationService.instance.cancelEventReminder(event));
+                unawaited(
+                  NotificationService.instance.cancelEventReminder(event),
+                );
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -5551,12 +6070,18 @@ Widget _buildEventTile(Event event, {DateTime? occurrenceDate}) {
                         setState(() {
                           _events.add(event);
                           _archiveEntries.removeWhere(
-                            (e) => e.id == archiveEntry.id && e.reason == archiveEntry.reason,
+                            (e) =>
+                                e.id == archiveEntry.id &&
+                                e.reason == archiveEntry.reason,
                           );
                         });
                         unawaited(_persistEvents());
                         unawaited(_saveArchive());
-                        unawaited(NotificationService.instance.scheduleEventReminder(event));
+                        unawaited(
+                          NotificationService.instance.scheduleEventReminder(
+                            event,
+                          ),
+                        );
                       },
                     ),
                   ),
@@ -5593,9 +6118,7 @@ class _WeeklyHeaderCell extends StatelessWidget {
     final isSelected = DateUtils.isSameDay(day, selectedDate);
 
     // pick a “calendar-like” visual: clean cell + subtle selection
-    final bg = isSelected
-        ? Colors.blue.shade50
-        : Colors.transparent;
+    final bg = isSelected ? Colors.blue.shade50 : Colors.transparent;
 
     final borderColor = Colors.blueGrey.shade200;
 
@@ -5648,8 +6171,6 @@ class _WeeklyHeaderCell extends StatelessWidget {
     );
   }
 }
-
-
 
 class _OverviewSection extends StatelessWidget {
   const _OverviewSection({
@@ -5727,10 +6248,7 @@ class _EmptyOverviewMessage extends StatelessWidget {
 }
 
 class _RoundedArrowButton extends StatelessWidget {
-  const _RoundedArrowButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _RoundedArrowButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback onTap;
@@ -5864,10 +6382,7 @@ InputDecoration _sharedInputDecoration({
 }
 
 class _EventTypeTabs extends StatelessWidget {
-  const _EventTypeTabs({
-    required this.selected,
-    required this.onSelected,
-  });
+  const _EventTypeTabs({required this.selected, required this.onSelected});
 
   final EventType selected;
   final ValueChanged<EventType> onSelected;
@@ -5885,7 +6400,10 @@ class _EventTypeTabs extends StatelessWidget {
               onTap: () => onSelected(type),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected ? Colors.white : Colors.transparent,
                   borderRadius: BorderRadius.circular(16),
@@ -5972,7 +6490,6 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
 
-
   @override
   void initState() {
     super.initState();
@@ -5983,7 +6500,6 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -6008,8 +6524,10 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   color: const Color(0xFFFFE1BB),
                   child: Row(
                     children: [
@@ -6097,7 +6615,6 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
     );
   }
 
-
   void _save() {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
@@ -6106,7 +6623,6 @@ class _AddNoteDialogState extends State<AddNoteDialog> {
       );
       return;
     }
-
 
     final now = DateTime.now();
     final note = NoteEntry(
@@ -6140,7 +6656,7 @@ class AddEventDialog extends StatefulWidget {
     required this.onEventAdded,
     super.key,
   });
-  
+
   final DateTime selectedDate;
   final List<String> categories;
   final ValueChanged<List<String>> onCategoriesChanged;
@@ -6255,12 +6771,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
                   child: SafeArea(
                     top: false,
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        0,
-                        20,
-                        24 + viewInsets,
-                      ),
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, 24 + viewInsets),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -6273,7 +6784,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           TextField(
                             controller: _titleController,
                             onChanged: (_) {
-                              if (_saveError != null) setState(() => _saveError = null);
+                              if (_saveError != null)
+                                setState(() => _saveError = null);
                             },
                             decoration: _sharedInputDecoration(
                               label: 'Name *',
@@ -6313,7 +6825,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           ),
                           const SizedBox(height: 20),
                           _sectionLabel(
-                            _selectedType == EventType.task ? 'Due time' : 'Time',
+                            _selectedType == EventType.task
+                                ? 'Due time'
+                                : 'Time',
                           ),
                           const SizedBox(height: 8),
                           if (_selectedType == EventType.task) ...[
@@ -6382,17 +6896,31 @@ class _AddEventDialogState extends State<AddEventDialog> {
                           SwitchListTile(
                             value: _isPinned,
                             onChanged: (v) => setState(() => _isPinned = v),
-                            title: const Text('Pin', style: TextStyle(fontWeight: FontWeight.w600)),
+                            title: const Text(
+                              'Pin',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
                             subtitle: const Text('Move to top of the list'),
-                            secondary: Icon(Icons.push_pin, color: Colors.blueGrey[500]),
+                            secondary: Icon(
+                              Icons.push_pin,
+                              color: Colors.blueGrey[500],
+                            ),
                             contentPadding: EdgeInsets.zero,
                           ),
                           SwitchListTile(
                             value: _isImportant,
                             onChanged: (v) => setState(() => _isImportant = v),
-                            title: const Text('Important', style: TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: const Text('Highlight and prioritise this item'),
-                            secondary: Icon(Icons.priority_high_rounded, color: Colors.amber[700]),
+                            title: const Text(
+                              'Important',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: const Text(
+                              'Highlight and prioritise this item',
+                            ),
+                            secondary: Icon(
+                              Icons.priority_high_rounded,
+                              color: Colors.amber[700],
+                            ),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ],
@@ -6551,10 +7079,8 @@ class _AddEventDialogState extends State<AddEventDialog> {
       ),
       items: kReminderOptions.keys
           .map(
-            (label) => DropdownMenuItem<String>(
-              value: label,
-              child: Text(label),
-            ),
+            (label) =>
+                DropdownMenuItem<String>(value: label, child: Text(label)),
           )
           .toList(),
       onChanged: (value) {
@@ -6647,8 +7173,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
             children: [
               Checkbox(
                 value: _isAllDay,
-                shape:
-                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
                 onChanged: (value) {
                   setState(() {
                     _isAllDay = value ?? false;
@@ -6670,8 +7197,6 @@ class _AddEventDialogState extends State<AddEventDialog> {
       ),
     );
   }
-
- 
 
   Widget _buildDatePickerTile(String formattedDate) {
     return InkWell(
@@ -6754,9 +7279,14 @@ class _AddEventDialogState extends State<AddEventDialog> {
     );
     if (selected != null) {
       setState(() {
-        final normalized = DateTime(selected.year, selected.month, selected.day);
-        final exists =
-            _selectedDates.any((date) => DateUtils.isSameDay(date, normalized));
+        final normalized = DateTime(
+          selected.year,
+          selected.month,
+          selected.day,
+        );
+        final exists = _selectedDates.any(
+          (date) => DateUtils.isSameDay(date, normalized),
+        );
         if (!exists) {
           _selectedDates.add(normalized);
         }
@@ -6770,7 +7300,6 @@ class _AddEventDialogState extends State<AddEventDialog> {
     required TimeOfDay? time,
     required VoidCallback onTap,
     bool enabled = true,
-
   }) {
     return InkWell(
       onTap: enabled ? onTap : null,
@@ -6792,9 +7321,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: !enabled
-                      ? Colors.blueGrey[300]
-                      : Colors.blueGrey[700],
+                  color: !enabled ? Colors.blueGrey[300] : Colors.blueGrey[700],
                 ),
               ),
             ),
@@ -6830,7 +7357,9 @@ class _AddEventDialogState extends State<AddEventDialog> {
           }
         } else {
           if (_startTime != null && !_isEndAfterStart(selected, _startTime!)) {
-            setState(() => _saveError = 'End time must be after the start time.');
+            setState(
+              () => _saveError = 'End time must be after the start time.',
+            );
             return;
           }
           _endTime = selected;
@@ -6858,13 +7387,16 @@ class _AddEventDialogState extends State<AddEventDialog> {
     }
 
     if (_endTime != null && _startTime == null) {
-      setState(() => _saveError = 'Choose a start time before selecting the end.');
+      setState(
+        () => _saveError = 'Choose a start time before selecting the end.',
+      );
       return;
     }
 
     final reminderDuration = kReminderOptions[_selectedReminderLabel];
-    final estimatedMinutes =
-        _selectedType == EventType.task ? _parseEstimatedMinutes() : null;
+    final estimatedMinutes = _selectedType == EventType.task
+        ? _parseEstimatedMinutes()
+        : null;
     final subtasks = _selectedType == EventType.task
         ? List<String>.from(_subtasks)
         : <String>[];
@@ -6952,7 +7484,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
   final List<DateTime> _selectedDates = [];
   late DateTime _lastPickedDate;
 
-
   @override
   void initState() {
     super.initState();
@@ -6976,10 +7507,12 @@ class _EditEventDialogState extends State<EditEventDialog> {
     final estimatedMinutes = init.estimatedMinutes ?? 0;
     final hours = estimatedMinutes ~/ 60;
     final minutes = estimatedMinutes % 60;
-    _taskHoursController =
-        TextEditingController(text: hours > 0 ? hours.toString() : '');
-    _taskMinutesController =
-        TextEditingController(text: minutes > 0 ? minutes.toString() : '');
+    _taskHoursController = TextEditingController(
+      text: hours > 0 ? hours.toString() : '',
+    );
+    _taskMinutesController = TextEditingController(
+      text: minutes > 0 ? minutes.toString() : '',
+    );
     _subtaskController = TextEditingController();
     _subtasks = List<String>.from(init.subtasks);
     _isPinned = init.isPinned;
@@ -7059,12 +7592,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
                   child: SafeArea(
                     top: false,
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        0,
-                        20,
-                        24 + viewInsets,
-                      ),
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, 24 + viewInsets),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -7077,7 +7605,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
                           TextField(
                             controller: _title,
                             onChanged: (_) {
-                              if (_saveError != null) setState(() => _saveError = null);
+                              if (_saveError != null)
+                                setState(() => _saveError = null);
                             },
                             decoration: _sharedInputDecoration(
                               label: 'Name *',
@@ -7180,17 +7709,31 @@ class _EditEventDialogState extends State<EditEventDialog> {
                           SwitchListTile(
                             value: _isPinned,
                             onChanged: (v) => setState(() => _isPinned = v),
-                            title: const Text('Pin', style: TextStyle(fontWeight: FontWeight.w600)),
+                            title: const Text(
+                              'Pin',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
                             subtitle: const Text('Move to top of the list'),
-                            secondary: Icon(Icons.push_pin, color: Colors.blueGrey[500]),
+                            secondary: Icon(
+                              Icons.push_pin,
+                              color: Colors.blueGrey[500],
+                            ),
                             contentPadding: EdgeInsets.zero,
                           ),
                           SwitchListTile(
                             value: _isImportant,
                             onChanged: (v) => setState(() => _isImportant = v),
-                            title: const Text('Important', style: TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: const Text('Highlight and prioritise this item'),
-                            secondary: Icon(Icons.priority_high_rounded, color: Colors.amber[700]),
+                            title: const Text(
+                              'Important',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: const Text(
+                              'Highlight and prioritise this item',
+                            ),
+                            secondary: Icon(
+                              Icons.priority_high_rounded,
+                              color: Colors.amber[700],
+                            ),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ],
@@ -7256,7 +7799,9 @@ class _EditEventDialogState extends State<EditEventDialog> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Delete Event'),
-          content: const Text('Do you want to delete just this occurrence or all repeats?'),
+          content: const Text(
+            'Do you want to delete just this occurrence or all repeats?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
@@ -7319,7 +7864,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
       Navigator.of(context).pop(<Event>[]);
     }
   }
-
 
   int? _parseEstimatedMinutes() {
     final hours = int.tryParse(_taskHoursController.text.trim());
@@ -7440,10 +7984,8 @@ class _EditEventDialogState extends State<EditEventDialog> {
       ),
       items: kReminderOptions.keys
           .map(
-            (label) => DropdownMenuItem<String>(
-              value: label,
-              child: Text(label),
-            ),
+            (label) =>
+                DropdownMenuItem<String>(value: label, child: Text(label)),
           )
           .toList(),
       onChanged: (value) {
@@ -7513,8 +8055,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
       },
     );
   }
-
-
 
   Widget _buildDatePickerTile(String formattedDate) {
     return InkWell(
@@ -7597,9 +8137,14 @@ class _EditEventDialogState extends State<EditEventDialog> {
     );
     if (selected != null) {
       setState(() {
-        final normalized = DateTime(selected.year, selected.month, selected.day);
-        final exists =
-            _selectedDates.any((date) => DateUtils.isSameDay(date, normalized));
+        final normalized = DateTime(
+          selected.year,
+          selected.month,
+          selected.day,
+        );
+        final exists = _selectedDates.any(
+          (date) => DateUtils.isSameDay(date, normalized),
+        );
         if (!exists) {
           _selectedDates.add(normalized);
         }
@@ -7607,7 +8152,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
       });
     }
   }
-
 
   Widget _buildTimePickerTile({
     required String label,
@@ -7635,9 +8179,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: !enabled
-                      ? Colors.blueGrey[300]
-                      : Colors.blueGrey[700],
+                  color: !enabled ? Colors.blueGrey[300] : Colors.blueGrey[700],
                 ),
               ),
             ),
@@ -7650,10 +8192,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
 
   Future<void> _pickTime({required bool isStart}) async {
     final fallbackEnd = _start != null
-        ? TimeOfDay(
-            hour: (_start!.hour + 1) % 24,
-            minute: _start!.minute,
-          )
+        ? TimeOfDay(hour: (_start!.hour + 1) % 24, minute: _start!.minute)
         : const TimeOfDay(hour: 10, minute: 0);
     final initialTime = isStart
         ? (_start ?? const TimeOfDay(hour: 9, minute: 0))
@@ -7666,7 +8205,6 @@ class _EditEventDialogState extends State<EditEventDialog> {
 
     if (selected != null) {
       setState(() {
-
         if (isStart) {
           _start = selected;
           if (_end != null && !_isEndAfterStart(_end!, selected)) {
@@ -7674,7 +8212,9 @@ class _EditEventDialogState extends State<EditEventDialog> {
           }
         } else {
           if (_start != null && !_isEndAfterStart(selected, _start!)) {
-            setState(() => _saveError = 'End time must be after the start time.');
+            setState(
+              () => _saveError = 'End time must be after the start time.',
+            );
             return;
           }
           _end = selected;
@@ -7682,6 +8222,7 @@ class _EditEventDialogState extends State<EditEventDialog> {
       });
     }
   }
+
   bool _isEndAfterStart(TimeOfDay end, TimeOfDay start) {
     final endMinutes = end.hour * 60 + end.minute;
     final startMinutes = start.hour * 60 + start.minute;
@@ -7701,12 +8242,16 @@ class _EditEventDialogState extends State<EditEventDialog> {
     }
 
     if (_end != null && _start == null) {
-      setState(() => _saveError = 'Choose a start time before selecting the end.');
+      setState(
+        () => _saveError = 'Choose a start time before selecting the end.',
+      );
       return;
     }
 
     final reminderDuration = kReminderOptions[_reminderLabel];
-    final estimatedMinutes = _type == EventType.task ? _parseEstimatedMinutes() : null;
+    final estimatedMinutes = _type == EventType.task
+        ? _parseEstimatedMinutes()
+        : null;
     final subtasks = _type == EventType.task
         ? List<String>.from(_subtasks)
         : <String>[];
@@ -7714,28 +8259,29 @@ class _EditEventDialogState extends State<EditEventDialog> {
     final dates = _sortedSelectedDates();
     final updatedEvents = <Event>[];
     for (var i = 0; i < dates.length; i++) {
-        updatedEvents.add(
-          Event(
-            id: i == 0 ? widget.initial.id : _newEventId(),
-            title: title,
-            description: _desc.text.trim(),
-            date: dates[i],
-            startTime: _start,
-            // Tasks only have a due time; no end time.
-            endTime: _type == EventType.task ? null : _end,
-            category: _category,
-            type: _type,
-            reminder: reminderDuration,
-            repeatFrequency: _repeatFrequency,
-            isCompleted: widget.initial.isCompleted,
-            completedDates:
-                i == 0 ? List<String>.from(widget.initial.completedDates) : const [],
-            estimatedMinutes: estimatedMinutes,
-            subtasks: subtasks,
-            isPinned: _isPinned,
-            isImportant: _isImportant,
-          ),
-        );
+      updatedEvents.add(
+        Event(
+          id: i == 0 ? widget.initial.id : _newEventId(),
+          title: title,
+          description: _desc.text.trim(),
+          date: dates[i],
+          startTime: _start,
+          // Tasks only have a due time; no end time.
+          endTime: _type == EventType.task ? null : _end,
+          category: _category,
+          type: _type,
+          reminder: reminderDuration,
+          repeatFrequency: _repeatFrequency,
+          isCompleted: widget.initial.isCompleted,
+          completedDates: i == 0
+              ? List<String>.from(widget.initial.completedDates)
+              : const [],
+          estimatedMinutes: estimatedMinutes,
+          subtasks: subtasks,
+          isPinned: _isPinned,
+          isImportant: _isImportant,
+        ),
+      );
     }
 
     Navigator.of(context).pop(updatedEvents);
@@ -7795,9 +8341,9 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
     final value = _newCategoryController.text.trim();
     if (value.isEmpty) return;
     if (_isDuplicate(value)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Category already exists.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Category already exists.')));
       return;
     }
     setState(() {
@@ -7834,9 +8380,9 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
     if (value.isEmpty || value == category) return;
     if (_isDuplicate(value, excluding: category)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Category already exists.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Category already exists.')));
       return;
     }
     setState(() {
@@ -7958,7 +8504,7 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
 
 class EventSearchDelegate extends SearchDelegate<Event?> {
   EventSearchDelegate({required List<Event> events})
-      : _events = List<Event>.from(events);
+    : _events = List<Event>.from(events);
 
   final List<Event> _events;
 
@@ -7971,7 +8517,6 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
     final year = dq.year ?? now.year;
     final month = dq.month ?? 1;
     final day = dq.day ?? 1;
-
 
     // Clamp to a valid date just in case
     final dt = _safeDate(year, month, day);
@@ -8009,7 +8554,8 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
 
     for (final e in _sortedEvents) {
       final mDate = dq != null && dq.matches(e.date);
-      final mKw = e.title.toLowerCase().contains(lower) ||
+      final mKw =
+          e.title.toLowerCase().contains(lower) ||
           e.description.toLowerCase().contains(lower) ||
           e.category.toLowerCase().contains(lower) ||
           e.type.label.toLowerCase().contains(lower);
@@ -8042,8 +8588,8 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
           final initialDate = guessed.isBefore(firstDate)
               ? firstDate
               : guessed.isAfter(lastDate)
-                  ? lastDate
-                  : guessed;
+              ? lastDate
+              : guessed;
 
           final picked = await showDatePicker(
             context: context,
@@ -8058,10 +8604,7 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
         },
       ),
       if (query.isNotEmpty)
-        IconButton(
-          onPressed: () => query = '',
-          icon: const Icon(Icons.clear),
-        ),
+        IconButton(onPressed: () => query = '', icon: const Icon(Icons.clear)),
     ];
   }
 
@@ -8117,8 +8660,9 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
           leading: CircleAvatar(
             backgroundColor: Colors.blue[600],
             foregroundColor: Colors.white,
-            child:
-                Text(event.title.isNotEmpty ? event.title[0].toUpperCase() : '?'),
+            child: Text(
+              event.title.isNotEmpty ? event.title[0].toUpperCase() : '?',
+            ),
           ),
           title: Text(
             event.title,
@@ -8128,11 +8672,13 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
                     color: Colors.blueGrey,
                   )
                 : null,
-          ),          subtitle: Text(_formatSubtitle(event)),
+          ),
+          subtitle: Text(_formatSubtitle(event)),
           onTap: () => close(context, event),
         );
       },
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, endIndent: 16),
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, indent: 72, endIndent: 16),
       itemCount: events.length,
     );
   }
@@ -8141,7 +8687,9 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
     final dateLabel = DateFormat('MMM d, yyyy').format(event.date);
 
     final completionLabel =
-        event.type == EventType.task && event.isCompletedOn(event.date) ? ' · Completed' : '';
+        event.type == EventType.task && event.isCompletedOn(event.date)
+        ? ' · Completed'
+        : '';
 
     if (event.hasTimeRange) {
       final start = DateTime(
@@ -8165,7 +8713,6 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
 
     return '${event.type.label} · $dateLabel · All day · ${event.category}$completionLabel';
   }
-
 }
 
 class _DateQuery {
@@ -8196,7 +8743,6 @@ DateTime? _safeDate(int year, int month, int day) {
   return null;
 }
 
-
 DateTime _todayBase() {
   final n = DateTime.now();
   return DateTime(n.year, n.month, n.day);
@@ -8206,11 +8752,7 @@ _DateQuery? _parseDateQueryLoose(String input) {
   var q = input.trim().toLowerCase();
 
   // 1) Special words with prefix support
-  const words = {
-    'today': 0,
-    'tomorrow': 1,
-    'yesterday': -1,
-  };
+  const words = {'today': 0, 'tomorrow': 1, 'yesterday': -1};
   final specials = words.keys.where((w) => w.startsWith(q)).toList();
   if (specials.length == 1) {
     final delta = words[specials.first]!;
@@ -8225,10 +8767,10 @@ _DateQuery? _parseDateQueryLoose(String input) {
     final y = int.parse(ymdM.group(1)!);
     final m = ymdM.group(2) != null ? int.parse(ymdM.group(2)!) : null;
     final d = ymdM.group(3) != null ? int.parse(ymdM.group(3)!) : null;
-    if (m == null) return _DateQuery(year: y);                  // year only
-    if (d == null) return _DateQuery(year: y, month: m);        // year-month
+    if (m == null) return _DateQuery(year: y); // year only
+    if (d == null) return _DateQuery(year: y, month: m); // year-month
     final ok = _safeDate(y, m, d) != null;
-    return ok ? _DateQuery(year: y, month: m, day: d) : null;   // full date
+    return ok ? _DateQuery(year: y, month: m, day: d) : null; // full date
   }
 
   // 3) Numeric no-year like "9/29" or "09-29" (assume current year)
@@ -8239,30 +8781,51 @@ _DateQuery? _parseDateQueryLoose(String input) {
     final a = int.parse(mdM.group(1)!);
     final b = int.parse(mdM.group(2)!);
     // Try MM/DD first, then DD/MM
-    if (_safeDate(now.year, a, b) != null) return _DateQuery(year: now.year, month: a, day: b);
-    if (_safeDate(now.year, b, a) != null) return _DateQuery(year: now.year, month: b, day: a);
+    if (_safeDate(now.year, a, b) != null)
+      return _DateQuery(year: now.year, month: a, day: b);
+    if (_safeDate(now.year, b, a) != null)
+      return _DateQuery(year: now.year, month: b, day: a);
   }
 
   // 4) Month-name (prefix) forms like "sep", "sept 2", "september 2025", "2 sep 2025"
-  final tokens = q.split(RegExp(r'[\s,.-]+')).where((t) => t.isNotEmpty).toList();
+  final tokens = q
+      .split(RegExp(r'[\s,.-]+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
   if (tokens.isNotEmpty) {
     final monthMap = <String, int>{
-      'january':1,'jan':1,
-      'february':2,'feb':2,
-      'march':3,'mar':3,
-      'april':4,'apr':4,
-      'may':5,
-      'june':6,'jun':6,
-      'july':7,'jul':7,
-      'august':8,'aug':8,
-      'september':9,'sep':9,'sept':9,
-      'october':10,'oct':10,
-      'november':11,'nov':11,
-      'december':12,'dec':12,
+      'january': 1,
+      'jan': 1,
+      'february': 2,
+      'feb': 2,
+      'march': 3,
+      'mar': 3,
+      'april': 4,
+      'apr': 4,
+      'may': 5,
+      'june': 6,
+      'jun': 6,
+      'july': 7,
+      'jul': 7,
+      'august': 8,
+      'aug': 8,
+      'september': 9,
+      'sep': 9,
+      'sept': 9,
+      'october': 10,
+      'oct': 10,
+      'november': 11,
+      'nov': 11,
+      'december': 12,
+      'dec': 12,
     };
 
     int? pickMonthPrefix(String t) {
-      final hits = monthMap.entries.where((e) => e.key.startsWith(t)).map((e) => e.value).toSet().toList();
+      final hits = monthMap.entries
+          .where((e) => e.key.startsWith(t))
+          .map((e) => e.value)
+          .toSet()
+          .toList();
       return hits.length == 1 ? hits.first : null; // only if unambiguous
     }
 
@@ -8282,7 +8845,8 @@ _DateQuery? _parseDateQueryLoose(String input) {
       final mB = pickMonthPrefix(tokens[1]);
       if (mA != null && RegExp(r'^\d{1,2}$').hasMatch(tokens[1])) {
         final d = int.parse(tokens[1]);
-        if (_safeDate(now.year, mA, d) != null) return _DateQuery(year: now.year, month: mA, day: d);
+        if (_safeDate(now.year, mA, d) != null)
+          return _DateQuery(year: now.year, month: mA, day: d);
       }
       if (mA != null && RegExp(r'^\d{4}$').hasMatch(tokens[1])) {
         final y = int.parse(tokens[1]);
@@ -8290,7 +8854,8 @@ _DateQuery? _parseDateQueryLoose(String input) {
       }
       if (RegExp(r'^\d{1,2}$').hasMatch(tokens[0]) && mB != null) {
         final d = int.parse(tokens[0]);
-        if (_safeDate(now.year, mB, d) != null) return _DateQuery(year: now.year, month: mB, day: d);
+        if (_safeDate(now.year, mB, d) != null)
+          return _DateQuery(year: now.year, month: mB, day: d);
       }
     } else if (tokens.length >= 3) {
       // e.g., "sep 2 2025", "2 sep 2025"
@@ -8342,8 +8907,10 @@ class _FriendsPageState extends State<FriendsPage> {
   String? _contactsError;
 
   static const String _friendsStorageKey = 'friends_friend_ids';
-  static const String _pendingIncomingStorageKey = 'friends_pending_incoming_ids';
-  static const String _pendingOutgoingStorageKey = 'friends_pending_outgoing_ids';
+  static const String _pendingIncomingStorageKey =
+      'friends_pending_incoming_ids';
+  static const String _pendingOutgoingStorageKey =
+      'friends_pending_outgoing_ids';
 
   @override
   void initState() {
@@ -8391,9 +8958,13 @@ class _FriendsPageState extends State<FriendsPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_friendsStorageKey, _friendIds.toList());
     await prefs.setStringList(
-        _pendingIncomingStorageKey, _pendingIncomingIds.toList());
+      _pendingIncomingStorageKey,
+      _pendingIncomingIds.toList(),
+    );
     await prefs.setStringList(
-        _pendingOutgoingStorageKey, _pendingOutgoingIds.toList());
+      _pendingOutgoingStorageKey,
+      _pendingOutgoingIds.toList(),
+    );
   }
 
   Future<void> _loadContacts() async {
@@ -8416,9 +8987,11 @@ class _FriendsPageState extends State<FriendsPage> {
       final list = fetched
           .where((contact) => _contactDisplayName(contact).isNotEmpty)
           .toList();
-      list.sort((a, b) => _contactDisplayName(a)
-          .toLowerCase()
-          .compareTo(_contactDisplayName(b).toLowerCase()));
+      list.sort(
+        (a, b) => _contactDisplayName(
+          a,
+        ).toLowerCase().compareTo(_contactDisplayName(b).toLowerCase()),
+      );
       if (!mounted) return;
       setState(() {
         _contacts
@@ -8466,7 +9039,11 @@ class _FriendsPageState extends State<FriendsPage> {
         _pendingIncomingIds.contains(id) ||
         _pendingOutgoingIds.contains(id)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).friendRequestAlreadyPending)),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).friendRequestAlreadyPending,
+          ),
+        ),
       );
       return;
     }
@@ -8515,9 +9092,7 @@ class _FriendsPageState extends State<FriendsPage> {
             child: _buildTabBar(l10n),
           ),
           const SizedBox(height: 8),
-          Expanded(
-            child: _buildTabList(),
-          ),
+          Expanded(child: _buildTabList()),
         ],
       ),
     );
@@ -8585,9 +9160,7 @@ class _FriendsPageState extends State<FriendsPage> {
     }
 
     if (_contacts.isEmpty) {
-      return _buildStatusMessage(
-        l10n.noContactsFound,
-      );
+      return _buildStatusMessage(l10n.noContactsFound);
     }
 
     switch (_currentTab) {
@@ -8661,10 +9234,7 @@ class _FriendsPageState extends State<FriendsPage> {
     final friends = _contacts
         .where((contact) => _friendIds.contains(_contactId(contact)))
         .toList();
-    return _buildContactList(
-      friends,
-      emptyMessage: l10n.noFriendsYet,
-    );
+    return _buildContactList(friends, emptyMessage: l10n.noFriendsYet);
   }
 
   Widget _buildPendingTab() {
@@ -8695,7 +9265,11 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
               ];
         final status = entry.isIncoming ? l10n.incoming : l10n.requested;
-        return _buildContactRow(entry.contact, status: status, actions: actions);
+        return _buildContactRow(
+          entry.contact,
+          status: status,
+          actions: actions,
+        );
       },
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemCount: pending.length,
@@ -8768,25 +9342,22 @@ class _FriendsPageState extends State<FriendsPage> {
                 const SizedBox(height: 4),
                 Text(
                   status ?? _contactSubtitle(contact),
-                  style: TextStyle(
-                    color: Colors.blueGrey[400],
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.blueGrey[400], fontSize: 12),
                 ),
               ],
             ),
           ),
           if (actions.isNotEmpty)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: actions,
-            ),
+            Row(mainAxisSize: MainAxisSize.min, children: actions),
         ],
       ),
     );
   }
 
-  Widget _buildActionButton({required IconData icon, required VoidCallback onTap}) {
+  Widget _buildActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(left: 6),
       child: InkWell(
@@ -8825,14 +9396,8 @@ class _FriendsPageState extends State<FriendsPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            message,
-            style: TextStyle(color: Colors.blueGrey[400]),
-          ),
-          if (action != null) ...[
-            const SizedBox(height: 8),
-            action,
-          ],
+          Text(message, style: TextStyle(color: Colors.blueGrey[400])),
+          if (action != null) ...[const SizedBox(height: 8), action],
         ],
       ),
     );
@@ -8842,8 +9407,7 @@ class _FriendsPageState extends State<FriendsPage> {
     final phone = contact.phones?.isNotEmpty == true
         ? contact.phones!.first.value ?? ''
         : '';
-    return contact.identifier ??
-        '${contact.displayName ?? ''}-$phone';
+    return contact.identifier ?? '${contact.displayName ?? ''}-$phone';
   }
 
   String _contactDisplayName(Contact contact) {
@@ -8868,7 +9432,9 @@ class _FriendsPageState extends State<FriendsPage> {
 }
 
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key});
+  const AccountPage({super.key, this.onArchiveChanged});
+
+  final FutureOr<void> Function()? onArchiveChanged;
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -8970,7 +9536,8 @@ class _AccountPageState extends State<AccountPage> {
                         iconColor: const Color(0xFFF59E0B),
                         title: l10n.notificationSettings,
                         subtitle: l10n.alertsReminders,
-                        onTap: () => _showPlaceholder(l10n.notificationSettings),
+                        onTap: () =>
+                            _showPlaceholder(l10n.notificationSettings),
                       ),
                       _buildMenuTile(
                         icon: Icons.notification_important_outlined,
@@ -9008,7 +9575,8 @@ class _AccountPageState extends State<AccountPage> {
                         iconColor: const Color(0xFF10B981),
                         title: l10n.language,
                         subtitle: _languageLabelForLocale(
-                            Localizations.localeOf(context)),
+                          Localizations.localeOf(context),
+                        ),
                         onTap: () => _showPlaceholder(l10n.language),
                       ),
                       _buildMenuTile(
@@ -9017,7 +9585,10 @@ class _AccountPageState extends State<AccountPage> {
                         title: 'Archive',
                         subtitle: 'Deleted, completed, and past items',
                         onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const ArchivePage()),
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ArchivePage(onChanged: widget.onArchiveChanged),
+                          ),
                         ),
                       ),
                     ],
@@ -9071,8 +9642,9 @@ class _AccountPageState extends State<AccountPage> {
     required AppLocalizations l10n,
     required String localeTag,
   }) {
-    final pointsFormatted =
-        NumberFormat.decimalPattern(localeTag).format(_points);
+    final pointsFormatted = NumberFormat.decimalPattern(
+      localeTag,
+    ).format(_points);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -9279,9 +9851,9 @@ class _AccountPageState extends State<AccountPage> {
 
   void _showPlaceholder(String label) {
     final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.actionPressed(label))),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.actionPressed(label))));
   }
 }
 
@@ -9406,13 +9978,14 @@ class _PointsPageState extends State<PointsPage> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
-                colors: [
-                  accent.withOpacity(0.9),
-                  accent.withOpacity(0.6),
-                ],
+                colors: [accent.withOpacity(0.9), accent.withOpacity(0.6)],
               ),
             ),
-            child: const Icon(Icons.emoji_events, color: Colors.white, size: 24),
+            child: const Icon(
+              Icons.emoji_events,
+              color: Colors.white,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -9421,7 +9994,10 @@ class _PointsPageState extends State<PointsPage> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -9429,7 +10005,11 @@ class _PointsPageState extends State<PointsPage> {
                     5,
                     (index) => const Padding(
                       padding: EdgeInsets.only(right: 2),
-                      child: Icon(Icons.star, size: 10, color: Color(0xFFCBD5F5)),
+                      child: Icon(
+                        Icons.star,
+                        size: 10,
+                        color: Color(0xFFCBD5F5),
+                      ),
                     ),
                   ),
                 ),
@@ -9597,11 +10177,7 @@ class _PointsPageState extends State<PointsPage> {
           _buildDivider(),
           _buildHistoryRow('Nov 15', pointsLabel('+20')),
           _buildDivider(),
-          _buildHistoryRow(
-            levelUpLabel,
-            pointsLabel('+25'),
-            highlight: true,
-          ),
+          _buildHistoryRow(levelUpLabel, pointsLabel('+25'), highlight: true),
           _buildDivider(),
           _buildHistoryRow('Nov 12', pointsLabel('+20')),
           _buildDivider(),
@@ -9611,7 +10187,11 @@ class _PointsPageState extends State<PointsPage> {
     );
   }
 
-  Widget _buildHistoryRow(String label, String value, {bool highlight = false}) {
+  Widget _buildHistoryRow(
+    String label,
+    String value, {
+    bool highlight = false,
+  }) {
     final labelStyle = TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w600,
@@ -9641,7 +10221,9 @@ class _PointsPageState extends State<PointsPage> {
             width: 12,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: highlight ? const Color(0xFF60A5FA) : const Color(0xFF93C5FD),
+              color: highlight
+                  ? const Color(0xFF60A5FA)
+                  : const Color(0xFF93C5FD),
             ),
           ),
           const SizedBox(width: 12),
@@ -9658,7 +10240,9 @@ class _PointsPageState extends State<PointsPage> {
 }
 
 class ArchivePage extends StatefulWidget {
-  const ArchivePage({super.key});
+  const ArchivePage({super.key, this.onChanged});
+
+  final FutureOr<void> Function()? onChanged;
 
   @override
   State<ArchivePage> createState() => _ArchivePageState();
@@ -9748,9 +10332,14 @@ class _ArchivePageState extends State<ArchivePage> {
 
   Future<void> _saveArchiveEntries() async {
     final prefs = await SharedPreferences.getInstance();
-    final encoded =
-        _archiveEntries.map((entry) => jsonEncode(entry.toMap())).toList();
+    final encoded = _archiveEntries
+        .map((entry) => jsonEncode(entry.toMap()))
+        .toList();
     await prefs.setStringList(_archiveStorageKey, encoded);
+  }
+
+  Future<void> _notifyArchiveChanged() async {
+    await widget.onChanged?.call();
   }
 
   void _removeArchiveEntry(ArchiveEntry entry) {
@@ -9760,9 +10349,22 @@ class _ArchivePageState extends State<ArchivePage> {
   }
 
   void _showArchiveMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  List<Event> _smartTaskSessionsFromPayload(Map<String, dynamic> payload) {
+    final rawSessions = payload['smartTaskSessions'];
+    if (rawSessions is! List) return const [];
+
+    final sessions = <Event>[];
+    for (final rawSession in rawSessions) {
+      if (rawSession is Map) {
+        sessions.add(Event.fromMap(Map<String, dynamic>.from(rawSession)));
+      }
+    }
+    return sessions;
   }
 
   Future<void> _restoreDeletedEntry(ArchiveEntry entry) async {
@@ -9781,22 +10383,57 @@ class _ArchivePageState extends State<ArchivePage> {
       }
       _removeArchiveEntry(entry);
       await _saveArchiveEntries();
+      await _notifyArchiveChanged();
       _showArchiveMessage('Note restored.');
       return;
     }
 
     final event = Event.fromMap(entry.payload!);
-    final exists = _events.any((e) => e.id == event.id);
-    if (!exists) {
-      setState(() {
-        _events.add(event);
-      });
-      await _saveEvents();
-      unawaited(NotificationService.instance.scheduleEventReminder(event));
+
+    final snapshotSessions = event.isSmartTask
+        ? _smartTaskSessionsFromPayload(entry.payload!)
+        : <Event>[];
+    final linkedSessionEntries = event.isSmartTask
+        ? _archiveEntries
+              .where(
+                (e) =>
+                    e.isSmartTaskSession &&
+                    e.parentTaskId == entry.id &&
+                    e.reason == kArchiveReasonDeleted,
+              )
+              .toList()
+        : <ArchiveEntry>[];
+    final linkedSessions = linkedSessionEntries
+        .where((e) => e.payload != null)
+        .map((e) => Event.fromMap(e.payload!));
+    final sessionsById = <String, Event>{
+      for (final session in snapshotSessions) session.id: session,
+      for (final session in linkedSessions) session.id: session,
+    };
+
+    final allEventsToRestore = <Event>[
+      if (!_events.any((e) => e.id == event.id)) event,
+      ...sessionsById.values.where((s) => !_events.any((e) => e.id == s.id)),
+    ];
+
+    setState(() {
+      _events.addAll(allEventsToRestore);
+      _archiveEntries.remove(entry);
+      for (final se in linkedSessionEntries) {
+        _archiveEntries.remove(se);
+      }
+    });
+    await _saveEvents();
+    for (final e in allEventsToRestore) {
+      unawaited(NotificationService.instance.scheduleEventReminder(e));
     }
-    _removeArchiveEntry(entry);
     await _saveArchiveEntries();
-    _showArchiveMessage('Event restored.');
+    await _notifyArchiveChanged();
+    _showArchiveMessage(
+      event.isSmartTask
+          ? 'Smart task and sessions restored.'
+          : 'Event restored.',
+    );
   }
 
   Future<void> _restoreCompletedEntry(ArchiveEntry entry) async {
@@ -9823,6 +10460,7 @@ class _ArchivePageState extends State<ArchivePage> {
     }
     _removeArchiveEntry(entry);
     await _saveArchiveEntries();
+    await _notifyArchiveChanged();
     _showArchiveMessage('Task marked as incomplete.');
   }
 
@@ -9849,6 +10487,7 @@ class _ArchivePageState extends State<ArchivePage> {
     }
     _removeArchiveEntry(entry);
     await _saveArchiveEntries();
+    await _notifyArchiveChanged();
     _showArchiveMessage('Occurrence restored.');
   }
 
@@ -9860,25 +10499,36 @@ class _ArchivePageState extends State<ArchivePage> {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
 
-    final deleted = _archiveEntries
-        .where((entry) =>
-            entry.reason == kArchiveReasonDeleted ||
-            entry.reason == kArchiveReasonOccurrenceDeleted)
-        .toList()
-      ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
+    final deleted =
+        _archiveEntries
+            .where(
+              (entry) =>
+                  (entry.reason == kArchiveReasonDeleted ||
+                      entry.reason == kArchiveReasonOccurrenceDeleted) &&
+                  !_isSessionCoveredByArchivedSmartTask(entry),
+            )
+            .toList()
+          ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
 
-    final completed = _archiveEntries
-        .where((entry) => entry.reason == kArchiveReasonCompleted)
-        .toList()
-      ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
+    final completed =
+        _archiveEntries
+            .where((entry) => entry.reason == kArchiveReasonCompleted)
+            .toList()
+          ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
 
-    final past = _events
-        .where((event) =>
-            event.repeatFrequency == RepeatFrequency.none &&
-            DateTime(event.date.year, event.date.month, event.date.day)
-                .isBefore(todayDate))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final past =
+        _events
+            .where(
+              (event) =>
+                  event.repeatFrequency == RepeatFrequency.none &&
+                  DateTime(
+                    event.date.year,
+                    event.date.month,
+                    event.date.day,
+                  ).isBefore(todayDate),
+            )
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
       backgroundColor: background,
@@ -9921,8 +10571,8 @@ class _ArchivePageState extends State<ArchivePage> {
                           label: 'Restore',
                           onTap: () =>
                               entry.reason == kArchiveReasonOccurrenceDeleted
-                                  ? _restoreOccurrenceEntry(entry)
-                                  : _restoreDeletedEntry(entry),
+                              ? _restoreOccurrenceEntry(entry)
+                              : _restoreDeletedEntry(entry),
                         ),
                       ),
                     ),
@@ -9981,10 +10631,7 @@ class _ArchivePageState extends State<ArchivePage> {
   Widget _buildEmptyState(String message) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        message,
-        style: TextStyle(color: Colors.blueGrey[400]),
-      ),
+      child: Text(message, style: TextStyle(color: Colors.blueGrey[400])),
     );
   }
 
@@ -10061,10 +10708,7 @@ class _ArchivePageState extends State<ArchivePage> {
   }) {
     return TextButton(
       onPressed: onTap,
-      child: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
     );
   }
 
@@ -10094,13 +10738,35 @@ class _ArchivePageState extends State<ArchivePage> {
     }
   }
 
+  bool _isSessionCoveredByArchivedSmartTask(ArchiveEntry entry) {
+    if (!entry.isSmartTaskSession ||
+        entry.parentTaskId == null ||
+        entry.reason != kArchiveReasonDeleted) {
+      return false;
+    }
+    return _archiveEntries.any(
+      (candidate) =>
+          candidate.id == entry.parentTaskId &&
+          candidate.reason == kArchiveReasonDeleted &&
+          candidate.payload != null &&
+          candidate.payload!['isSmartTask'] == true,
+    );
+  }
+
   String _titleForArchiveEntry(ArchiveEntry entry) {
     if (entry.title.trim().isEmpty) return 'Untitled';
     return entry.title;
   }
 
   String _subtitleForArchiveEntry(ArchiveEntry entry, String reasonLabel) {
-    final typeLabel = _typeLabel(entry.type);
+    final String typeLabel;
+    if (entry.isSmartTaskSession) {
+      typeLabel = 'Session';
+    } else if (entry.payload != null && entry.payload!['isSmartTask'] == true) {
+      typeLabel = 'Smart task';
+    } else {
+      typeLabel = _typeLabel(entry.type);
+    }
     final dateLabel = _formatDate(entry.date ?? entry.archivedAt);
     return '$reasonLabel · $typeLabel · $dateLabel';
   }
@@ -10213,7 +10879,10 @@ class RewardsPage extends StatelessWidget {
                 const SizedBox(width: 44),
                 Text(
                   '$levelShort $level',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
                 const Spacer(),
                 Text(
@@ -10241,10 +10910,7 @@ class RewardsPage extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                    colors: [
-                      accent.withOpacity(0.9),
-                      const Color(0xFFFBCFE8),
-                    ],
+                    colors: [accent.withOpacity(0.9), const Color(0xFFFBCFE8)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -10354,8 +11020,7 @@ class LanguagePage extends StatelessWidget {
                 const Divider(height: 1, indent: 16, endIndent: 16),
             itemBuilder: (context, index) {
               final option = _options[index];
-              final isSelected =
-                  _localeToString(option.locale) == selected;
+              final isSelected = _localeToString(option.locale) == selected;
               return ListTile(
                 title: Text(
                   option.label,
@@ -10389,6 +11054,7 @@ class ProfilePage extends StatelessWidget {
     super.key,
     required this.currentLocale,
     required this.onLocaleChanged,
+    this.onArchiveChanged,
     this.dayStartTime,
     this.dayEndTime,
     this.onDayTimesChanged,
@@ -10396,6 +11062,7 @@ class ProfilePage extends StatelessWidget {
 
   final Locale? currentLocale;
   final ValueChanged<Locale> onLocaleChanged;
+  final FutureOr<void> Function()? onArchiveChanged;
   final TimeOfDay? dayStartTime;
   final TimeOfDay? dayEndTime;
   final void Function(TimeOfDay start, TimeOfDay end)? onDayTimesChanged;
@@ -10432,8 +11099,10 @@ class ProfilePage extends StatelessWidget {
                 accent: accent,
                 border: border,
                 levelLabel: l10n.levelLabel(10),
-                levelPointsLabel:
-                    l10n.levelPointsLabel(10, '$pointsFormatted ${l10n.pointsShort}'),
+                levelPointsLabel: l10n.levelPointsLabel(
+                  10,
+                  '$pointsFormatted ${l10n.pointsShort}',
+                ),
               ),
               const SizedBox(height: 18),
 
@@ -10450,7 +11119,10 @@ class ProfilePage extends StatelessWidget {
                     cardColor: card,
                     borderColor: border,
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const AccountPage()),
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            AccountPage(onArchiveChanged: onArchiveChanged),
+                      ),
                     ),
                   ),
                   _ProfileOptionTile(
@@ -10527,16 +11199,18 @@ class ProfilePage extends StatelessWidget {
                     onTap: onDayTimesChanged == null
                         ? null
                         : () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => ScheduleSettingsPage(
-                                  dayStartTime: dayStartTime ??
-                                      const TimeOfDay(hour: 8, minute: 0),
-                                  dayEndTime: dayEndTime ??
-                                      const TimeOfDay(hour: 20, minute: 0),
-                                  onChanged: onDayTimesChanged!,
-                                ),
+                            MaterialPageRoute(
+                              builder: (_) => ScheduleSettingsPage(
+                                dayStartTime:
+                                    dayStartTime ??
+                                    const TimeOfDay(hour: 8, minute: 0),
+                                dayEndTime:
+                                    dayEndTime ??
+                                    const TimeOfDay(hour: 20, minute: 0),
+                                onChanged: onDayTimesChanged!,
                               ),
                             ),
+                          ),
                   ),
                   _ProfileOptionTile(
                     icon: Icons.archive_outlined,
@@ -10546,7 +11220,10 @@ class ProfilePage extends StatelessWidget {
                     cardColor: card,
                     borderColor: border,
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const ArchivePage()),
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ArchivePage(onChanged: onArchiveChanged),
+                      ),
                     ),
                   ),
                   _ProfileOptionTile(
@@ -10570,13 +11247,15 @@ class ProfilePage extends StatelessWidget {
                   _ProfileOptionTile(
                     icon: Icons.repeat_on_outlined,
                     label: 'Test repeating notifications',
-                    subtitle: '3 repeats at 5 s, 20 s, 35 s — simulates weekly repeat',
+                    subtitle:
+                        '3 repeats at 5 s, 20 s, 35 s — simulates weekly repeat',
                     accentColor: const Color(0xFFEF4444),
                     cardColor: card,
                     borderColor: border,
                     onTap: () {
                       unawaited(
-                        NotificationService.instance.showTestRepeatNotifications(),
+                        NotificationService.instance
+                            .showTestRepeatNotifications(),
                       );
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -10623,10 +11302,7 @@ class ProfilePage extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
-          colors: [
-            accent.withOpacity(0.75),
-            accent.withOpacity(0.35),
-          ],
+          colors: [accent.withOpacity(0.75), accent.withOpacity(0.35)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -10649,8 +11325,11 @@ class ProfilePage extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.workspace_premium,
-                    color: Colors.white, size: 16),
+                const Icon(
+                  Icons.workspace_premium,
+                  color: Colors.white,
+                  size: 16,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   levelLabel,
@@ -10807,8 +11486,10 @@ class _ProfileOptionTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle!,
-                      style:
-                          TextStyle(color: Colors.blueGrey[400], fontSize: 12),
+                      style: TextStyle(
+                        color: Colors.blueGrey[400],
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ],
@@ -10892,8 +11573,10 @@ class _ScheduleSettingsPageState extends State<ScheduleSettingsPage> {
           icon: Icon(Icons.arrow_back, color: Colors.blueGrey[800]),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text('Schedule Settings',
-            style: TextStyle(fontWeight: FontWeight.w600)),
+        title: const Text(
+          'Schedule Settings',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -10909,38 +11592,57 @@ class _ScheduleSettingsPageState extends State<ScheduleSettingsPage> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text('Daily Work Window',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.blueGrey[700])),
+                  child: Text(
+                    'Daily Work Window',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.blueGrey[700],
+                    ),
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                   child: Text(
-                      'Smart tasks will only be scheduled within these hours.',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.blueGrey[500])),
+                    'Smart tasks will only be scheduled within these hours.',
+                    style: TextStyle(fontSize: 12, color: Colors.blueGrey[500]),
+                  ),
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.wb_sunny_outlined,
-                      color: Colors.orange[400]),
-                  title: const Text('Day starts at',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: Text(_fmt(_start),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  leading: Icon(
+                    Icons.wb_sunny_outlined,
+                    color: Colors.orange[400],
+                  ),
+                  title: const Text(
+                    'Day starts at',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: Text(
+                    _fmt(_start),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                   onTap: () => _pickTime(isStart: true),
                 ),
                 const Divider(height: 1, indent: 16),
                 ListTile(
-                  leading: Icon(Icons.nights_stay_outlined,
-                      color: Colors.indigo[300]),
-                  title: const Text('Day ends at',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: Text(_fmt(_end),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  leading: Icon(
+                    Icons.nights_stay_outlined,
+                    color: Colors.indigo[300],
+                  ),
+                  title: const Text(
+                    'Day ends at',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  trailing: Text(
+                    _fmt(_end),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                   onTap: () => _pickTime(isStart: false),
                 ),
               ],
@@ -10984,7 +11686,8 @@ class _AddTypeRow extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 42, height: 42,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 color: accent.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(12),
@@ -10996,18 +11699,26 @@ class _AddTypeRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: Colors.blueGrey[500], fontSize: 12)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: Colors.blueGrey[500], fontSize: 12),
+                  ),
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded,
-                size: 14, color: Colors.blueGrey[300]),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 14,
+              color: Colors.blueGrey[300],
+            ),
           ],
         ),
       ),
