@@ -10503,9 +10503,8 @@ class _ArchivePageState extends State<ArchivePage> {
         _archiveEntries
             .where(
               (entry) =>
-                  (entry.reason == kArchiveReasonDeleted ||
-                      entry.reason == kArchiveReasonOccurrenceDeleted) &&
-                  !_isSessionCoveredByArchivedSmartTask(entry),
+                  entry.reason == kArchiveReasonDeleted ||
+                  entry.reason == kArchiveReasonOccurrenceDeleted,
             )
             .toList()
           ..sort((a, b) => b.archivedAt.compareTo(a.archivedAt));
@@ -10736,21 +10735,6 @@ class _ArchivePageState extends State<ArchivePage> {
       case EventType.event:
         return Icons.event_outlined;
     }
-  }
-
-  bool _isSessionCoveredByArchivedSmartTask(ArchiveEntry entry) {
-    if (!entry.isSmartTaskSession ||
-        entry.parentTaskId == null ||
-        entry.reason != kArchiveReasonDeleted) {
-      return false;
-    }
-    return _archiveEntries.any(
-      (candidate) =>
-          candidate.id == entry.parentTaskId &&
-          candidate.reason == kArchiveReasonDeleted &&
-          candidate.payload != null &&
-          candidate.payload!['isSmartTask'] == true,
-    );
   }
 
   String _titleForArchiveEntry(ArchiveEntry entry) {
