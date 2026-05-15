@@ -1,15 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:contacts_service/contacts_service.dart';
 import 'package:intl/intl.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'app_localizations.dart';
 
 part 'note_editor_page.dart';
@@ -1563,6 +1568,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(_persistCategories());
   }
 
+  Future<bool> _handleDeleteCategory(String category) async {
+    final key = _categoryKey(category);
+    final eventsToDelete =
+        _events.where((e) => _categoryKey(e.category) == key).toList();
+    final notesToDelete =
+        _notes.where((n) => _categoryKey(n.category) == key).toList();
+    final total = eventsToDelete.length + notesToDelete.length;
+    final itemLabel = total == 1 ? 'item' : 'items';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete folder?'),
+        content: Text(
+          total > 0
+              ? 'Delete "$category" and its $total $itemLabel? '
+                    'Everything inside will be moved to the archive so you can restore it later.'
+              : 'Delete "$category"? This folder is empty.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return false;
+
+    setState(() {
+      _events.removeWhere((e) => _categoryKey(e.category) == key);
+      _notes.removeWhere((n) => _categoryKey(n.category) == key);
+      _pinnedNoteCategories
+          .removeWhere((c) => _categoryKey(c) == key);
+      for (final e in eventsToDelete) {
+        final entry = ArchiveEntry.deletedEvent(e);
+        if (!_hasArchiveEntry(entry)) _archiveEntries.insert(0, entry);
+      }
+      for (final n in notesToDelete) {
+        final entry = ArchiveEntry.deletedNote(n);
+        if (!_hasArchiveEntry(entry)) _archiveEntries.insert(0, entry);
+      }
+    });
+    unawaited(_persistEvents());
+    unawaited(_saveNotes());
+    unawaited(_saveArchive());
+    unawaited(_persistPinnedNoteCategories());
+    for (final e in eventsToDelete) {
+      unawaited(NotificationService.instance.cancelEventReminder(e));
+    }
+    return true;
+  }
+
   void _handleNoteAdded(NoteEntry note) {
     _upsertNote(note);
     _addCategoryIfMissing(note.category);
@@ -1713,10 +1777,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 });
               }),
               const SizedBox(width: 12),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.blue[50],
-                child: Icon(Icons.person, color: Colors.blue[700]),
+              GestureDetector(
+                onTap: () => Navigator.of(context)
+                    .push(
+                      MaterialPageRoute(
+                        builder: (_) => ProfilePage(
+                          currentLocale: widget.currentLocale,
+                          onLocaleChanged: widget.onLocaleChanged,
+                          onArchiveChanged: _loadPersistedState,
+                          dayStartTime: _dayStartTime,
+                          dayEndTime: _dayEndTime,
+                          onDayTimesChanged: (start, end) {
+                            setState(() {
+                              _dayStartTime = start;
+                              _dayEndTime = end;
+                            });
+                            unawaited(_persistDayTimes());
+                          },
+                        ),
+                      ),
+                    )
+                    .then((_) => _loadPersistedState()),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.blue[50],
+                  child: Icon(Icons.person, color: Colors.blue[700]),
+                ),
               ),
             ],
           ),
@@ -1763,6 +1849,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
             _ScheduleView.weekly,
             Icons.view_week_rounded,
           ),
+          if (!DateUtils.isSameDay(_selectedDate, DateTime.now())) ...[
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () => setState(() => _selectedDate = DateTime.now()),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue[600],
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Today',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -2314,7 +2422,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               );
             }),
           ),
-          // vertical separators
+          // vertical separators + today column highlight
           Positioned(
             left: timeColWidth,
             top: 0,
@@ -3532,7 +3640,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const Spacer(),
           _buildIconButton(Icons.folder_outlined, _showNotesCategoryManager),
           const SizedBox(width: 10),
-          _buildIconButton(Icons.search, _showEventSearch),
+          _buildIconButton(Icons.search, _showNoteSearch),
         ],
       ),
     );
@@ -3541,7 +3649,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _showNotesCategoryManager() async {
     final updated = await showDialog<List<String>>(
       context: context,
-      builder: (_) => _CategoryManagerDialog(categories: _categories),
+      builder: (_) => _CategoryManagerDialog(
+        categories: _categories,
+        onDeleteCategory: _handleDeleteCategory,
+      ),
     );
     if (!mounted || updated == null) return;
     _handleCategoriesUpdated(_normalizeCategories(updated));
@@ -3854,6 +3965,49 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Future<void> _showNoteSearch() async {
+    if (_notes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a note to search.')),
+      );
+      return;
+    }
+
+    // Derive unique folder names from the current note list.
+    final folders = _notes.map((n) => n.category).toSet().toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    await showSearch<NoteEntry?>(
+      context: context,
+      delegate: NoteSearchDelegate(
+        notes: List<NoteEntry>.from(_notes),
+        folders: folders,
+        onOpenNote: (note) async {
+          final updated = await Navigator.of(context).push<NoteEntry?>(
+            MaterialPageRoute(
+              builder: (_) =>
+                  NoteEditorPage(category: note.category, existing: note),
+            ),
+          );
+          if (updated != null && mounted) _upsertNote(updated);
+        },
+        onOpenFolder: (category) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => NotesFolderPage(
+                category: category,
+                notes: _notes,
+                onUpsert: _upsertNote,
+                onDelete: _deleteNote,
+                onTogglePin: _togglePin,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _showEventSearch() async {
     if (_events.isEmpty) {
       ScaffoldMessenger.of(
@@ -4075,9 +4229,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           },
           child: Container(
             decoration: BoxDecoration(
-              color: isSelected
-                  ? Colors.blue.withOpacity(0.08) // subtle selected cell wash
-                  : Colors.white,
+              color: isToday ? const Color(0xFFDBEAFF) : Colors.white,
               border: Border(
                 right: isLastCol
                     ? BorderSide.none
@@ -4101,7 +4253,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: isSelected
+                        color: (isToday || isSelected)
                             ? Colors.blue[600]
                             : Colors.transparent,
                       ),
@@ -4110,12 +4262,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: isSelected
+                          color: (isToday || isSelected)
                               ? Colors.white
                               : !isInMonth
                               ? Colors.blueGrey[300]
-                              : isToday
-                              ? Colors.blue[700]
                               : Colors.blueGrey[800],
                         ),
                       ),
@@ -5772,7 +5922,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
     unawaited(_persistEvents());
     unawaited(_saveArchive());
-    unawaited(NotificationService.instance.cancelEventReminder(session));
+    unawaited(NotificationService.instance.rescheduleAll(_events));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Session deleted.'),
@@ -5789,7 +5939,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             unawaited(_persistEvents());
             unawaited(_saveArchive());
             unawaited(
-              NotificationService.instance.scheduleEventReminder(session),
+              NotificationService.instance.rescheduleAll(_events),
             );
           },
         ),
@@ -5851,9 +6001,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       });
       unawaited(_persistEvents());
       unawaited(_saveArchive());
-      for (final e in allToDelete) {
-        unawaited(NotificationService.instance.cancelEventReminder(e));
-      }
+      // cancelAll + reschedule surviving events — guarantees no stale notifications.
+      unawaited(NotificationService.instance.rescheduleAll(_events));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('"${parent.title}" and all sessions deleted.'),
@@ -5871,11 +6020,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               });
               unawaited(_persistEvents());
               unawaited(_saveArchive());
-              for (final e in allToDelete) {
-                unawaited(
-                  NotificationService.instance.scheduleEventReminder(e),
-                );
-              }
+              unawaited(NotificationService.instance.rescheduleAll(_events));
             },
           ),
         ),
@@ -5981,9 +6126,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         });
         unawaited(_persistEvents());
         unawaited(_saveArchive());
-        for (final e in allToDelete) {
-          unawaited(NotificationService.instance.cancelEventReminder(e));
-        }
+        unawaited(NotificationService.instance.rescheduleAll(_events));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('"${event.title}" and all sessions deleted'),
@@ -6001,11 +6144,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 });
                 unawaited(_persistEvents());
                 unawaited(_saveArchive());
-                for (final e in allToDelete) {
-                  unawaited(
-                    NotificationService.instance.scheduleEventReminder(e),
-                  );
-                }
+                unawaited(
+                    NotificationService.instance.rescheduleAll(_events));
               },
             ),
           ),
@@ -6336,18 +6476,16 @@ class _WeeklyHeaderCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final isToday = DateUtils.isSameDay(day, today);
     final isSelected = DateUtils.isSameDay(day, selectedDate);
-
-    // pick a “calendar-like” visual: clean cell + subtle selection
-    final bg = isSelected ? Colors.blue.shade50 : Colors.transparent;
-
+    final showCircle = isToday || isSelected;
     final borderColor = Colors.blueGrey.shade200;
 
     return InkWell(
       onTap: onTap,
       child: Container(
-        height: 56, // consistent cell height like month grid rows
+        height: 62,
         decoration: BoxDecoration(
-          color: bg,
+          // Today's column gets the light blue background; selected-only does not.
+          color: isToday ? const Color(0xFFDBEAFF) : Colors.transparent,
           border: Border(
             left: BorderSide(color: borderColor),
             bottom: BorderSide(color: borderColor),
@@ -6362,29 +6500,27 @@ class _WeeklyHeaderCell extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Colors.blueGrey[600],
+                color: isToday ? Colors.blue[700] : Colors.blueGrey[600],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${day.day}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: isToday ? Colors.blue[700] : Colors.blueGrey[900],
+            const SizedBox(height: 3),
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: showCircle ? Colors.blue[600] : Colors.transparent,
               ),
-            ),
-            // small today indicator like many calendar grids
-            if (isToday)
-              Container(
-                margin: const EdgeInsets.only(top: 3),
-                width: 16,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: Colors.blue[600],
-                  borderRadius: BorderRadius.circular(99),
+              child: Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: showCircle ? Colors.white : Colors.blueGrey[900],
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -6900,7 +7036,7 @@ class _AddEventDialogState extends State<AddEventDialog> {
   RepeatFrequency _repeatFrequency = RepeatFrequency.none;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
-  bool _isAllDay = true;
+  bool _isAllDay = false;
   bool _isPinned = false;
   bool _isImportant = false;
   late List<String> _categories;
@@ -8532,9 +8668,15 @@ class _EditEventDialogState extends State<EditEventDialog> {
 }
 
 class _CategoryManagerDialog extends StatefulWidget {
-  const _CategoryManagerDialog({required this.categories});
+  const _CategoryManagerDialog({
+    required this.categories,
+    this.onDeleteCategory,
+  });
 
   final List<String> categories;
+  // If provided, called when the user confirms a category deletion.
+  // Returns true to proceed with removal from the list, false to cancel.
+  final Future<bool> Function(String category)? onDeleteCategory;
 
   @override
   State<_CategoryManagerDialog> createState() => _CategoryManagerDialogState();
@@ -8616,25 +8758,32 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
   }
 
   Future<void> _deleteCategory(String category) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      useRootNavigator: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete category?'),
-        content: Text('Delete "$category"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+    bool confirmed;
+    if (widget.onDeleteCategory != null) {
+      // Let the parent handle confirmation + archiving; it returns true to proceed.
+      confirmed = await widget.onDeleteCategory!(category);
+    } else {
+      confirmed = await showDialog<bool>(
+            context: context,
+            useRootNavigator: false,
+            builder: (context) => AlertDialog(
+              title: const Text('Delete category?'),
+              content: Text('Delete "$category"?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+    }
+    if (!confirmed) return;
     setState(() => _categories.remove(category));
   }
 
@@ -8935,6 +9084,163 @@ class EventSearchDelegate extends SearchDelegate<Event?> {
 
     return '${event.type.label} · $dateLabel · All day · ${event.category}$completionLabel';
   }
+}
+
+// ── Note search ────────────────────────────────────────────────────────────────
+
+class NoteSearchDelegate extends SearchDelegate<NoteEntry?> {
+  NoteSearchDelegate({
+    required this.notes,
+    required this.folders,
+    required this.onOpenNote,
+    required this.onOpenFolder,
+  });
+
+  final List<NoteEntry> notes;
+  final List<String> folders;
+  final void Function(NoteEntry note) onOpenNote;
+  final void Function(String category) onOpenFolder;
+
+  @override
+  String get searchFieldLabel => 'Search notes & folders';
+
+  @override
+  List<Widget>? buildActions(BuildContext context) => [
+        if (query.isNotEmpty)
+          IconButton(
+            onPressed: () => query = '',
+            icon: const Icon(Icons.clear),
+          ),
+      ];
+
+  @override
+  Widget? buildLeading(BuildContext context) => IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => close(context, null),
+      );
+
+  List<String> _matchingFolders(String q) {
+    if (q.isEmpty) return folders;
+    final lower = q.toLowerCase();
+    return folders.where((f) => f.toLowerCase().contains(lower)).toList();
+  }
+
+  List<NoteEntry> _matchingNotes(String q) {
+    final sorted = List<NoteEntry>.from(notes)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    if (q.isEmpty) return sorted;
+    final lower = q.toLowerCase();
+    return sorted
+        .where((n) =>
+            n.title.toLowerCase().contains(lower) ||
+            n.description.toLowerCase().contains(lower) ||
+            n.category.toLowerCase().contains(lower))
+        .toList();
+  }
+
+  @override
+  Widget buildResults(BuildContext context) => _buildList(context);
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _buildList(context);
+
+  Widget _buildList(BuildContext context) {
+    final matchFolders = _matchingFolders(query);
+    final matchNotes = _matchingNotes(query);
+    final noteCountByFolder = <String, int>{};
+    for (final n in notes) {
+      noteCountByFolder[n.category] =
+          (noteCountByFolder[n.category] ?? 0) + 1;
+    }
+
+    if (matchFolders.isEmpty && matchNotes.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.search_off, size: 48, color: Colors.blueGrey),
+            SizedBox(height: 12),
+            Text(
+              'No matching notes or folders',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        if (matchFolders.isNotEmpty) ...[
+          _sectionHeader('Folders'),
+          ...matchFolders.map((folder) {
+            final count = noteCountByFolder[folder] ?? 0;
+            return ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFE0F2FF),
+                child: Icon(Icons.folder_rounded, color: Color(0xFF2563EB)),
+              ),
+              title: Text(
+                folder,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                '$count ${count == 1 ? 'note' : 'notes'}',
+                style: TextStyle(color: Colors.blueGrey[500]),
+              ),
+              onTap: () {
+                close(context, null);
+                onOpenFolder(folder);
+              },
+            );
+          }),
+          if (matchNotes.isNotEmpty)
+            const Divider(height: 1, indent: 16, endIndent: 16),
+        ],
+        if (matchNotes.isNotEmpty) ...[
+          _sectionHeader('Notes'),
+          ...matchNotes.map((note) => ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: const Color(0xFFFFF4D9),
+                  child: Icon(
+                    note.isChecklist
+                        ? Icons.checklist_rounded
+                        : Icons.sticky_note_2_outlined,
+                    color: const Color(0xFFB45309),
+                  ),
+                ),
+                title: Text(
+                  note.title.isEmpty ? 'Untitled' : note.title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  '${note.category} · ${DateFormat('MMM d, yyyy').format(note.updatedAt)}',
+                  style: TextStyle(color: Colors.blueGrey[500]),
+                ),
+                onTap: () {
+                  close(context, null);
+                  onOpenNote(note);
+                },
+              )),
+        ],
+      ],
+    );
+  }
+
+  Widget _sectionHeader(String label) => Padding(
+        padding:
+            const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Colors.blueGrey[500],
+            letterSpacing: 0.8,
+          ),
+        ),
+      );
 }
 
 class _DateQuery {
