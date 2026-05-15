@@ -345,6 +345,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
       );
     }
     if (_lines.isEmpty) _addLine(markDirty: false);
+    if (_lines.last.isImage) {
+      _addLine(markDirty: false);
+    }
     _activeLineIndex = null;
   }
 
@@ -651,9 +654,15 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   }
 
   void _focusLastTextLine() {
-    final candidates = _lines.where((l) => !l.isImage).toList();
-    if (candidates.isEmpty) return;
-    final last = candidates.last;
+    if (_lines.isEmpty || _lines.last.isImage) {
+      setState(() {
+        _addLine(markDirty: false);
+      });
+    }
+    final lastIndex = _lines.lastIndexWhere((line) => !line.isImage);
+    if (lastIndex < 0) return;
+    _activeLineIndex = lastIndex;
+    final last = _lines[lastIndex];
     last.focusNode.requestFocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -763,8 +772,11 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     await File(picked.path).copy(destPath);
     final insertAt = (_activeLineIndex ?? _lines.length - 1) + 1;
     _commitBeforeStructuralChange();
+    final nextTextIndex = insertAt + 1;
     setState(() {
       _addLine(isImage: true, imagePath: destPath, insertAt: insertAt);
+      _addLine(insertAt: nextTextIndex, markDirty: false, requestFocus: true);
+      _activeLineIndex = nextTextIndex;
       _dirty = true;
     });
   }
@@ -778,7 +790,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     final text = line.controller.text;
     final baseStyle = TextStyle(
       fontSize: 16,
-      height: 1.4,
+      height: 1.25,
       color: line.isChecklist && line.isChecked
           ? Colors.blueGrey
           : Colors.black87,
@@ -959,11 +971,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     // +1 for the empty spacer at the bottom (tapping empty space focuses last line).
     final total = _lines.length + 1;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 12),
       itemCount: total,
-      separatorBuilder: (_, index) => index < _lines.length - 1
-          ? const SizedBox(height: 2)
-          : const SizedBox.shrink(),
+      separatorBuilder: (_, __) => const SizedBox.shrink(),
       itemBuilder: (context, index) {
         // Spacer at the bottom — tapping empty space focuses the last line.
         if (index == _lines.length) {
@@ -1064,12 +1074,11 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                     hintText: index == 0 ? 'Start typing...' : null,
                     border: InputBorder.none,
                     isCollapsed: true,
-                    // Minimum touch target height so empty lines are easy to tap.
-                    constraints: const BoxConstraints(minHeight: 44),
+                    constraints: const BoxConstraints(minHeight: 26),
                   ),
                   style: TextStyle(
                     fontSize: 16,
-                    height: 1.4,
+                    height: 1.25,
                     color: line.isChecklist && line.isChecked
                         ? Colors.blueGrey
                         : Colors.black87,
